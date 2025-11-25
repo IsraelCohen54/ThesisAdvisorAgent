@@ -55,7 +55,29 @@
       <recent name="D:\PycharmProjects\ThesisAdvocatorAgent\dev_agile_helper" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.verify_API_key_setup">
+  <component name="RunManager" selected="Python.Gemini_API_key_connections">
+    <configuration name="Gemini_API_key_connections" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
+      <module name="ThesisAdvocatorAgent" />
+      <option name="ENV_FILES" value="$PROJECT_DIR$/.env" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/test_agile_steps" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="D:\PycharmProjects\ThesisAdvocatorAgent\test_agile_steps\Gemini_API_key_connections.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="python check" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="ThesisAdvocatorAgent" />
       <option name="ENV_FILES" value="" />
@@ -100,32 +122,10 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="verify_API_key_setup" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
-      <module name="ThesisAdvocatorAgent" />
-      <option name="ENV_FILES" value="$PROJECT_DIR$/.env" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/test_agile_steps" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/test_agile_steps/verify_API_key_setup.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
     <list>
       <item itemvalue="Python.routing_logic" />
-      <item itemvalue="Python.verify_API_key_setup" />
       <item itemvalue="Python.python check" />
+      <item itemvalue="Python.Gemini_API_key_connections" />
     </list>
     <recent_temporary>
       <list>
