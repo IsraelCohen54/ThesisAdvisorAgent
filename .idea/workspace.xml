@@ -7,7 +7,10 @@
     <list default="true" id="cf7c5574-0af1-4e8b-ae64-f7c9ce975e8f" name="Changes" comment="working gemini">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/core/agents.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/core/agents.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_agile_steps/python check.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_agile_steps/python check.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/infrastructure/tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/infrastructure/tools.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/interfaces/interfaces.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/interfaces/interfaces.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_agile_steps/logger.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_agile_steps/routing_logic.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_agile_steps/routing_logic.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -35,6 +38,7 @@
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
+    "Python.Gemini_API_key_connections (1).executor": "Run",
     "Python.main.executor": "Run",
     "Python.python check.executor": "Run",
     "Python.routing_logic (1).executor": "Run",
@@ -55,7 +59,29 @@
       <recent name="D:\PycharmProjects\ThesisAdvocatorAgent\dev_agile_helper" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.Gemini_API_key_connections">
+  <component name="RunManager" selected="Python.routing_logic">
+    <configuration name="Gemini_API_key_connections (1)" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="ThesisAdvocatorAgent" />
+      <option name="ENV_FILES" value="$PROJECT_DIR$/.env" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/test_agile_steps" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/test_agile_steps/Gemini_API_key_connections.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="Gemini_API_key_connections" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
       <module name="ThesisAdvocatorAgent" />
       <option name="ENV_FILES" value="$PROJECT_DIR$/.env" />
@@ -124,11 +150,13 @@
     </configuration>
     <list>
       <item itemvalue="Python.routing_logic" />
-      <item itemvalue="Python.python check" />
       <item itemvalue="Python.Gemini_API_key_connections" />
+      <item itemvalue="Python.Gemini_API_key_connections (1)" />
+      <item itemvalue="Python.python check" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.Gemini_API_key_connections (1)" />
         <item itemvalue="Python.python check" />
         <item itemvalue="Python.routing_logic" />
       </list>
@@ -166,7 +194,31 @@
       <option name="project" value="LOCAL" />
       <updated>1764103266083</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="working gemini">
+      <option name="closed" value="true" />
+      <created>1764104128334</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1764104128334</updated>
+    </task>
+    <task id="LOCAL-00004" summary="working gemini">
+      <option name="closed" value="true" />
+      <created>1764104297365</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1764104297365</updated>
+    </task>
+    <task id="LOCAL-00005" summary="working gemini">
+      <option name="closed" value="true" />
+      <created>1764104310286</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1764104310286</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
