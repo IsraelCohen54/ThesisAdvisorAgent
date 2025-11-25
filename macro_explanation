@@ -1,0 +1,10 @@
+ThesisAdvocator/
+├── app/
+│   ├── core/           # Entities & Business Logic (The Brain)
+│   ├── interfaces/     # Abstract Base Classes (The Contracts/Protocols)
+│   ├── infrastructure/ # External Tools (Gemini, Arxiv, DuckDuckGo)
+│   └── services/       # Connects Logic to Tools
+├── tests/              # Automated Tests
+├── .env                # API Keys (Never commit this to Git!)
+├── requirements.txt    # Dependency list
+└── test_agile_steps/   # Agile Steps Verification Script
