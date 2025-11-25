@@ -30,7 +30,7 @@ class ThesisAdvocatorAgent(Agent, AgentInterface):
         # Initialize the underlying ADK LlmAgent/Agent
         # We use 'Agent' as a fallback if 'LlmAgent' is not the correct name.
         agent_class = LlmAgent if 'LlmAgent' in globals() else Agent
-        model = Gemini(model="gemini-2.0-flash-exp",
+        model = Gemini(model="gemini-2.5-flash-lite",  # "gemini-2.0-flash-exp", # => billing model
                        api_key=os.getenv("GOOGLE_API_KEY"),
                        retry_config=retry_config)
 
