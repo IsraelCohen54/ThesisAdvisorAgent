@@ -5,6 +5,8 @@ from google.adk.sessions import InMemorySessionService
 import logging
 import os
 from app.core.agents import ThesisAdvocatorAgent
+from google.genai import types
+
 
 
 def cleanup_logs():
@@ -46,59 +48,124 @@ def initialize_runner():
 
 
 def inspect_response(response, step_name):
-    """
-    Robustly inspects an ADK Agent response object to find text and tool calls.
-    Works across different ADK versions by checking attributes dynamically.
-    """
     print(f"\n--- 🔍 INSPECTING: {step_name} ---")
 
-    # 1. Try to print the TEXT response
-    text_found = False
-    # Check common attributes for text
-    for attr in ['text', 'output', 'content']:
-        val = getattr(response, attr, None)
-        if val:
-            print(f"🤖 Agent Answer: {val}")
-            text_found = True
-            break
+    # If response is a generator/iterable, iterate and keep the last event
+    last_event = None
+    try:
+        for event in response:
+            last_event = event
+    except Exception as e:
+        print(f"🛑 Execution Error during iteration: {e}")
+        return
 
-    if not text_found:
-        print("🤖 Agent Answer: [No text output found]")
+    if last_event is None:
+        print("⚠️ Runner returned no events.")
+        return
 
-    # 2. Try to find TOOL CALLS
-    # Tool calls might be on the response object, or nested in 'steps' or 'candidates'
-    tool_found = False
+    # Many ADK events have .messages (list), each message has .content, .tool_calls, etc.
+    # 1) messages
+    if hasattr(last_event, "messages") and getattr(last_event, "messages"):
+        last_msg = last_event.messages[-1]
+        # Content may be a Content-like object
+        if hasattr(last_msg, "content") and last_msg.content:
+            # content.parts is an array of Part objects
+            parts = getattr(last_msg.content, "parts", None)
+            if parts:
+                # join all text parts
+                text_parts = []
+                for p in parts:
+                    try:
+                        text_parts.append(p.text)
+                    except Exception:
+                        # fallback: str(part)
+                        text_parts.append(str(p))
+                print("🤖 Last Message Text:", "\n".join(text_parts))
+            else:
+                # fallback: textual representation
+                try:
+                    print("🤖 Last Message:", last_msg.content.text)
+                except Exception:
+                    print("🤖 Last Message (raw):", last_msg.content)
 
-    # Check direct attribute
-    if hasattr(response, 'tool_calls') and response.tool_calls:
-        print(f"🛠️ Tool Called (Direct): {response.tool_calls[0].function.name}")
-        tool_found = True
+        # Tool calls inside the message
+        if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+            tc = last_msg.tool_calls[0]
+            name = getattr(tc.function, "name", str(tc.function))
+            print(f"🛠️ Tool Called: {name}")
+            # If there are args/inputs, print them
+            try:
+                args = getattr(tc, "args", None)
+                if args:
+                    print("   tool args:", args)
+            except Exception:
+                pass
+            return
 
-    # Check nested steps/history (common in ADK runners)
-    if not tool_found and hasattr(response, 'steps'):
-        for step in response.steps:
-            if hasattr(step, 'tool_calls') and step.tool_calls:
-                print(f"🛠️ Tool Called (In Step): {step.tool_calls[0].function.name}")
-                tool_found = True
-                break
+    # 2) Some event types return .text or .candidates
+    if hasattr(last_event, "text") and last_event.text:
+        print("🤖 Text:", last_event.text)
 
-    if not tool_found:
-        print("🛠️ Tool Status: No external tool was triggered.")
+    if hasattr(last_event, "tool_calls") and last_event.tool_calls:
+        print("🛠️ Tool Called:", last_event.tool_calls[0].function.name)
+        return
+
+    # 3) The Google GenAI responses sometimes contain .candidates with content
+    if hasattr(last_event, "candidates") and last_event.candidates:
+        try:
+            cand = last_event.candidates[0]
+            if hasattr(cand, "content") and cand.content:
+                parts = getattr(cand.content, "parts", [])
+                texts = []
+                for p in parts:
+                    try:
+                        texts.append(p.text)
+                    except Exception:
+                        texts.append(str(p))
+                print("🤖 Candidate text:", "\n".join(texts))
+                return
+        except Exception:
+            pass
+
+    print("⚠️ Response object found, but no known output or tool-calls detected. Dumping event for debugging:")
+    try:
+        print(repr(last_event)[:2000])
+    except Exception:
+        print(str(last_event)[:2000])
 
 
 def run_tests(runner: Runner):
     # Test 1: Bio
     bio_thesis = "Please find recent articles discussing the ethical implications of human organoids."
 
-    # Use standard .run()
-    response_1 = runner.run(user_id="1", session_id="session_bio_1", new_message=bio_thesis)
-    inspect_response(response_1, "Biomedical Thesis")
+    # Wrap into a types.Content object (has .role and .parts)
+    bio_content = types.Content(
+        role="user",
+        parts=[types.Part.from_text(text=bio_thesis)],
+    )
+    runner.session_service.create_session(user_id="1", session_id="session_bio_1")
+    # The runner.run returns an iterable/async generator of events.
+    response_1_generator = runner.run(
+        user_id="1",
+        session_id="session_bio_1",
+        new_message=bio_content
+    )
+    inspect_response(response_1_generator, "Biomedical Thesis")
 
     # Test 2: General
     general_thesis = "What are the major academic disagreements on the causes of the Renaissance?"
 
-    response_2 = runner.run(user_id="1", session_id="session_gen_1", new_message=general_thesis)
-    inspect_response(response_2, "General Thesis")
+    general_content = types.Content(
+        role="user",
+        parts=[types.Part.from_text(text=general_thesis)],
+    )
+    runner.session_service.create_session(user_id="1", session_id="session_gen_1")
+    response_2_generator = runner.run(
+        user_id="1",
+        session_id="session_gen_1",
+        new_message=general_content
+    )
+    inspect_response(response_2_generator, "General Thesis")
 
 
 if __name__ == "__main__":
