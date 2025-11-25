@@ -51,7 +51,7 @@ def verify_step_1():
         # 3. Use the model's generate_content method for a direct response
         try:
             # generate_content() is the method for simple, single-turn requests.
-            response = model(contents=user_prompt)
+            response = model.api_client.models.generate_content(model="gemini-2.5-flash-lite", contents=user_prompt)
 
             # 4. Extract and Display the Answer
             print("\n💡 Gemini Response:")
