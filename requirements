@@ -1,3 +1,4 @@
 google-adk
 requests
 mcp
+biopython>=1.79

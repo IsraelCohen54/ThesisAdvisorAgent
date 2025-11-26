@@ -4,9 +4,16 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="cf7c5574-0af1-4e8b-ae64-f7c9ce975e8f" name="Changes" comment="working gemini">
+    <list default="true" id="cf7c5574-0af1-4e8b-ae64-f7c9ce975e8f" name="Changes" comment="tools working! + cleanup">
+      <change afterPath="$PROJECT_DIR$/app/core/debater_agent.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_agile_steps/sanity_check_tools.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/core/agents.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/core/agents.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/infrastructure/tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/infrastructure/tools.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/interfaces/interfaces.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/services/services.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements" beforeDir="false" afterPath="$PROJECT_DIR$/requirements" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test_agile_steps/routing_logic.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_agile_steps/routing_logic.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -37,10 +44,15 @@
   "keyToString": {
     "Python.Gemini_API_key_connections (1).executor": "Run",
     "Python.main.executor": "Run",
+    "Python.pubmed_tool_sanity_check.executor": "Run",
     "Python.python check.executor": "Run",
     "Python.routing_logic (1).executor": "Run",
     "Python.routing_logic.executor": "Run",
     "Python.routing_tester.executor": "Run",
+    "Python.sanity_check_scholar_tool.executor": "Run",
+    "Python.sanity_check_tools (1).executor": "Run",
+    "Python.sanity_check_tools.executor": "Run",
+    "Python.tools.executor": "Run",
     "Python.verify_API_key_setup (1).executor": "Run",
     "Python.verify_API_key_setup.executor": "Run",
     "Python.verify_setup.executor": "Run",
@@ -56,7 +68,7 @@
       <recent name="D:\PycharmProjects\ThesisAdvocatorAgent\dev_agile_helper" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.routing_logic">
+  <component name="RunManager" selected="Python.main">
     <configuration name="Gemini_API_key_connections (1)" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="ThesisAdvocatorAgent" />
       <option name="ENV_FILES" value="$PROJECT_DIR$/.env" />
@@ -93,6 +105,50 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <option name="SCRIPT_NAME" value="D:\PycharmProjects\ThesisAdvocatorAgent\test_agile_steps\Gemini_API_key_connections.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="main" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
+      <module name="ThesisAdvocatorAgent" />
+      <option name="ENV_FILES" value="$PROJECT_DIR$/.env" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/main.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="pubmed_tool_sanity_check" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="ThesisAdvocatorAgent" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/test_agile_steps" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/test_agile_steps/pubmed_tool_sanity_check.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -145,17 +201,90 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <configuration name="sanity_check_tools (1)" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="ThesisAdvocatorAgent" />
+      <option name="ENV_FILES" value="$PROJECT_DIR$/.env" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/test_agile_steps" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/test_agile_steps/sanity_check_tools.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="sanity_check_tools" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
+      <module name="ThesisAdvocatorAgent" />
+      <option name="ENV_FILES" value="$PROJECT_DIR$/.env" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/test_agile_steps" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="D:\PycharmProjects\ThesisAdvocatorAgent\test_agile_steps\sanity_check_tools.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="tools" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="ThesisAdvocatorAgent" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/app/infrastructure" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/app/infrastructure/tools.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <list>
+      <item itemvalue="Python.main" />
       <item itemvalue="Python.routing_logic" />
+      <item itemvalue="Python.sanity_check_tools" />
       <item itemvalue="Python.Gemini_API_key_connections" />
       <item itemvalue="Python.Gemini_API_key_connections (1)" />
+      <item itemvalue="Python.pubmed_tool_sanity_check" />
+      <item itemvalue="Python.sanity_check_tools (1)" />
+      <item itemvalue="Python.tools" />
       <item itemvalue="Python.python check" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.sanity_check_tools (1)" />
+        <item itemvalue="Python.tools" />
+        <item itemvalue="Python.pubmed_tool_sanity_check" />
         <item itemvalue="Python.Gemini_API_key_connections (1)" />
         <item itemvalue="Python.python check" />
-        <item itemvalue="Python.routing_logic" />
       </list>
     </recent_temporary>
   </component>
@@ -223,7 +352,15 @@
       <option name="project" value="LOCAL" />
       <updated>1764109099494</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="going forward">
+      <option name="closed" value="true" />
+      <created>1764111882351</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1764111882351</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -240,6 +377,8 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="init" />
     <MESSAGE value="working gemini" />
-    <option name="LAST_COMMIT_MESSAGE" value="working gemini" />
+    <MESSAGE value="going forward" />
+    <MESSAGE value="tools working! + cleanup" />
+    <option name="LAST_COMMIT_MESSAGE" value="tools working! + cleanup" />
   </component>
 </project>
