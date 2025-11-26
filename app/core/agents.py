@@ -24,7 +24,7 @@ class ThesisAdvocatorAgent(Agent):
     def __init__(self):
         # 1. Setup Model
         model = Gemini(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             api_key=os.getenv("GEMINI_API_KEY"),
             retry_options=retry_config
         )
