@@ -26,7 +26,8 @@ class ThesisAdvocatorAgent(Agent):
         model = Gemini(
             model="gemini-2.5-flash",
             api_key=os.getenv("GEMINI_API_KEY"),
-            retry_options=retry_config
+            retry_options=retry_config,
+            temperature=0
         )
 
         # 2. Setup Tools with Explicit Wrappers
@@ -56,31 +57,39 @@ class ThesisAdvocatorAgent(Agent):
 
         # Create the ADK Tools using the WRAPPERS, not the class methods
         scholar_tool_obj = FunctionTool(func=google_scholar_tool)
+        scholar_tool_obj.name = "google_scholar_tool"  # <- explicit name the model should call
+        scholar_tool_obj.description = "google_scholar_tool(query: str) -> returns formatted scholar results."
+
         pubmed_tool_obj = FunctionTool(func=pubmed_tool)
+        pubmed_tool_obj.name = "pubmed_tool"  # <- explicit name the model should call
+        pubmed_tool_obj.description = "pubmed_tool(query: str) -> returns formatted pubmed results."
 
         # 3. System Instruction
-        system_prompt = """You are the Thesis Advocator Router. 
-        Your task is to choose most appropriate tool to search for the most similar thesis or academic articles by title
+        system_prompt = """You are the Thesis Advocator Router.
+        Your job: choose the single best specialist tool and CALL it immediately (do not answer directly).
+        IMPORTANT: You MUST call exactly one of the available tool functions by name and not output a normal-text answer instead of calling a tool.
 
-        1. Analyze the thesis topic.
-        2. If it is biomedical or health related, call 'pubmed_tool_obj'.
-        3. Otherwise, call 'scholar_tool_obj'.
-        DO NOT ask for clarification. Pick the best tool and run it immediately.
-        4. After you call the tool, you MUST return the tool's 5 most similar match by title directly to the user. 
-        5. process, summarize, and reformat the results to be representable in this way:
+        Rules:
+        - If the thesis is biomedical/medical/clinical in topic, CALL the function named: "pubmed_tool"
+        - Otherwise, CALL the function named: "google_scholar_tool"
+        - Do NOT output extra natural language instead of calling the tool.
+        - After the tool returns, summarize the 5 most similar matches for the user in this format:
+
         Title:
         Summary:
         Link:
-        Make it simple but concise and informative.
+
+        Keep summaries concise and factual.
         """
 
         # 4. Initialize Base Agent
         super().__init__(
             name="ThesisAdvocatorRouter",
             model=model,
-            tools=[scholar_tool_obj, pubmed_tool_obj],
+            tools=[scholar_tool_obj, pubmed_tool_obj],  # <<-- use the FunctionTool objs
             instruction=system_prompt,
         )
+        logger.info("Registered tools: %s", [t.name for t in self.tools])
 
 
 # Factory function is now much simpler (or can be removed if you call class directly)

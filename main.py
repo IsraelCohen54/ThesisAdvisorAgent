@@ -1,16 +1,22 @@
+# main.py
 import logging
 import os
 import asyncio
 import uuid
+from types import SimpleNamespace
+
 from google.adk.apps.app import App, ResumabilityConfig
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types as gen_types
 
 from app.core.agents import get_router_agent
+from app.infrastructure.tools import PubMedTool, GoogleScholarTool
 
 
-# Logging Setup
+# -------------------------
+# Logging / small utilities
+# -------------------------
 def cleanup_logs():
     for log_file in ["logger.log", "web.log", "tunnel.log"]:
         if os.path.exists(log_file):
@@ -22,8 +28,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger("ThesisAdvocator")
 
 
-# --- Helpers ---
-
+# -------------------------
+# ADK Content helper
+# -------------------------
 def create_content_message(text: str) -> gen_types.Content:
     """Wraps text into ADK Content format."""
     return gen_types.Content(
@@ -32,6 +39,9 @@ def create_content_message(text: str) -> gen_types.Content:
     )
 
 
+# -------------------------
+# Session helper (async)
+# -------------------------
 async def _create_session_async(runner, user_id, session_id, app_name):
     """Async helper for session creation."""
     await runner.session_service.create_session(
@@ -39,8 +49,11 @@ async def _create_session_async(runner, user_id, session_id, app_name):
     )
 
 
+# -------------------------
+# Initialize system
+# -------------------------
 def initialize_system():
-    """Sets up the App and Runner."""
+    """Sets up the App and Runner and returns (runner, app_name)."""
     if not os.getenv("GEMINI_API_KEY"):
         logger.error("FATAL: GEMINI_API_KEY not found.")
         return None, None
@@ -60,8 +73,9 @@ def initialize_system():
     return runner, app.name
 
 
-# --- Main Application Loop ---
-
+# -------------------------
+# Main interactive loop
+# -------------------------
 def run_thesis_advocator():
     runner, app_name = initialize_system()
     if not runner:
@@ -71,67 +85,133 @@ def run_thesis_advocator():
     USER_ID = "user_1"
     SESSION_ID = f"session_{uuid.uuid4().hex[:8]}"
 
-    # 1. Create Session Sync
+    # Create Session (sync)
     asyncio.run(_create_session_async(runner, USER_ID, SESSION_ID, app_name))
     print(f"🎓 Thesis Advocator Initialized (Session: {SESSION_ID})")
 
-    # 2. Get Initial Input
+    # Get initial thesis/idea
     thesis_input = input("\n📝 Enter your thesis/idea: ").strip()
     if not thesis_input:
         print("Empty input. Exiting.")
         return
 
-    # 3. Research Loop (Refinement)
     approved = False
     current_query = thesis_input
+
+    # Keyword fallback list for deciding PubMed vs Scholar when router fails to call a tool
+    bio_keywords = ["cell", "protein", "organoid", "genome", "stem", "cancer", "clinical", "disease", "therapy"]
 
     while not approved:
         print(f"\n🔎 Routing and Searching for: '{current_query}'...")
 
-        # Run Agent
+        # Build content and call runner.run with retry on runtime errors
         message = create_content_message(current_query)
-        events = runner.run(user_id=USER_ID, session_id=SESSION_ID, new_message=message)
 
-        # Capture Output
+        try:
+            events = runner.run(user_id=USER_ID, session_id=SESSION_ID, new_message=message)
+        except Exception as e:
+            logger.exception("Runner failed during agent run: %s", e)
+            retry = input("Agent run failed (network/async). Retry? (y/n): ").strip().lower()
+            if retry in ("y", "yes"):
+                continue
+            else:
+                print("Exiting due to runner error.")
+                return
+
+        # Collect textual output and detect tool calls (take the FIRST tool call seen)
         full_text_output = []
-        tool_used = "None"
+        tool_used = None
+        tool_response_text = None
 
         for event in events:
-            # Check for text
-            if hasattr(event, "content") and event.content:
-                for part in event.content.parts or []:
-                    if part.text:
-                        full_text_output.append(part.text)
+            # Extract text parts (multiple ADK shapes handled)
+            try:
+                # Preferred: event.messages[*].content.parts[*].text
+                if hasattr(event, "messages") and event.messages:
+                    for m in event.messages:
+                        if getattr(m, "content", None) and getattr(m.content, "parts", None):
+                            for p in m.content.parts:
+                                if getattr(p, "text", None):
+                                    full_text_output.append(p.text)
+                # Fallback: event.content.parts
+                elif getattr(event, "content", None) and getattr(event.content, "parts", None):
+                    for p in event.content.parts:
+                        if getattr(p, "text", None):
+                            full_text_output.append(p.text)
+            except Exception:
+                # ignore single-event parsing errors
+                pass
 
-            # Check for tool usage
-            if hasattr(event, "tool_calls") and event.tool_calls:
-                tool_used = event.tool_calls[0].function.name
+            # Detect tool calls - we accept first tool call seen as canonical
+            try:
+                tcs = getattr(event, "tool_calls", None)
+                if tcs:
+                    seen = getattr(tcs[0].function, "name", None)
+                    if not tool_used:
+                        tool_used = seen
+                    elif tool_used != seen:
+                        logger.warning(
+                            "Model attempted multiple tools in one response: first='%s' later='%s' — using first.",
+                            tool_used, seen)
+            except Exception:
+                pass
 
-        # Display Results
+        # Join text parts into final_response (may be empty if agent only issued a tool call)
+        final_response = "\n".join(full_text_output).strip() or None
+
+        # If agent DID NOT call a tool, do a deterministic fallback programmatic call
+        if not tool_used:
+            if any(k in current_query.lower() for k in bio_keywords):
+                tool_used = "pubmed_tool"
+                tool_response_text = PubMedTool(max_results=5).execute(current_query)
+            else:
+                tool_used = "google_scholar_tool"
+                tool_response_text = GoogleScholarTool().execute(current_query)
+
+            print("\n⚠️ Router didn't call tool — using fallback programmatic call.")
+            final_response = tool_response_text
+
+        # Display results to user
         print(f"\n🛠️ Tool Used: {tool_used}")
         print("-" * 40)
-        final_response = "\n".join(full_text_output)
-        print(final_response)
+        print(final_response or "[No response text]")
         print("-" * 40)
 
-        # 4. Human Approval
-        choice = input("\n🤔 Are these results relevant? (y = yes / n = no, refine / q = quit): ").lower().strip()
+        # Append tool/agent output into the session (so future agents can read it)
+        try:
+            content = gen_types.Content(role="assistant", parts=[gen_types.Part.from_text(text=str(final_response))])
+            evt = SimpleNamespace(content=content)
+            runner.session_service.append_event(user_id=USER_ID, session_id=SESSION_ID, event=evt)
+        except Exception as e:
+            logger.debug("Could not append event to session: %s", e)
 
-        if choice in ['y', 'yes']:
-            approved = True
-            print("\n✅ Evidence Approved.")
-        elif choice in ['q', 'quit']:
-            print("Exiting.")
-            return
-        else:
-            current_query = input("🔄 Enter refined keywords or query: ").strip()
-            print("Re-running search...")
+        # ---------------------------
+        # Human-in-the-loop: Approve/Refine/Quit
+        # ---------------------------
+        while True:
+            choice = input("\n🤔 Are these results relevant? (y = yes / n = no, refine / q = quit): ").strip().lower()
+            if choice in ("y", "yes"):
+                approved = True
+                print("\n✅ Evidence Approved.")
+                break
+            elif choice in ("q", "quit"):
+                print("Exiting.")
+                return
+            elif choice in ("n", "no", "refine"):
+                new_q = input("🔄 Enter refined keywords or query (or blank to re-run same query): ").strip()
+                if new_q:
+                    current_query = new_q
+                # don't mark approved -> loop will rerun using current_query
+                break
+            else:
+                print("Please type 'y' (yes), 'n' (no/refine) or 'q' (quit).")
 
-    # 5. (Future) Debate Phase
-    print("\n🚀 Starting Multi-Agent Debate Phase...")
-    print(f"Context: {thesis_input}")
-    print("Delegating to Pro/Con Agents... (Not implemented in this demo)")
-    # Here you would call the Debater Agents using the data collected above
+    # End of research loop -> approved == True
+    print("\n🎯 Finalizing — starting debate/synthesis phase (placeholder).")
+    print(f"Context (original thesis): {thesis_input}")
+    print(
+        "Collected evidence appended to session; here you would call Pro/Con debator agents and synthesize their outputs.")
+    # TODO: call your debator agents here, e.g. pass session context to them and append their results.
 
 
 if __name__ == "__main__":
