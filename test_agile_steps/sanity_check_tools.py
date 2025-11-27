@@ -2,6 +2,7 @@
 import os
 import inspect
 import logging
+import json
 from types import SimpleNamespace
 
 # ADK imports
@@ -10,22 +11,27 @@ from google.adk.apps.app import App, ResumabilityConfig
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 
-# your agents/tools
-from app.core.agents import get_router_agent  # this must return the router LlmAgent
+# your agents/tools (make sure these import from your project)
+from app.core.agents import get_talk_agent  # must return an LlmAgent router configured with AgentTools
 from app.infrastructure.tools import GoogleScholarTool, PubMedTool
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sanity_check")
 
-# Ensure GEMINI & SERPAPI keys are present (quick sanity)
+# Quick env checks
 if not os.getenv("GEMINI_API_KEY"):
     logger.error("GEMINI_API_KEY missing in env. Set it in PyCharm run configuration.")
 if not os.getenv("SERPAPI_API_KEY"):
     logger.warning("SERPAPI_API_KEY missing — Scholar tests will fail without it.")
+if not os.getenv("NCBI_API_KEY"):
+    logger.info("NCBI_API_KEY not set (ok for low-volume tests) — Entrez will still run but rate-limited.")
 
 
-# small helper to create session whether create_session is sync or async
 def ensure_session_sync(session_service, app_name, user_id, session_id):
+    """
+    Create session in a way that works whether create_session is sync or coroutine.
+    This creates a temporary event loop if needed and closes it immediately.
+    """
     create_fn = getattr(session_service, "create_session", None)
     if create_fn is None:
         raise RuntimeError("session_service has no create_session")
@@ -40,38 +46,114 @@ def ensure_session_sync(session_service, app_name, user_id, session_id):
         create_fn(app_name=app_name, user_id=user_id, session_id=session_id)
 
 
-def print_event_debug(ev):
-    # Print message text parts
+def safe_text_of(part):
+    """Return textual representation for a content/part, safe vs None."""
     try:
-        if hasattr(ev, "messages") and ev.messages:
-            for m in ev.messages:
-                if getattr(m, "content", None) and getattr(m.content, "parts", None):
-                    for p in m.content.parts:
-                        if getattr(p, "text", None):
-                            print("MSG PART >", p.text)
-        elif getattr(ev, "content", None) and getattr(ev.content, "parts", None):
-            for p in ev.content.parts:
-                if getattr(p, "text", None):
-                    print("CONTENT PART >", p.text)
-    except Exception as e:
-        print("Failed printing text parts:", e)
-
-    # Print any tool_calls attached to the event
-    tcs = getattr(ev, "tool_calls", None)
-    if tcs:
-        for tc in tcs:
+        if getattr(part, "text", None):
+            return part.text
+        # function_response may exist
+        fr = getattr(part, "function_response", None)
+        if fr and getattr(fr, "response", None):
+            # pretty-print JSON-like response if possible
             try:
-                name = getattr(tc.function, "name", "<no-name>")
-                print("TOOL CALL DETECTED ->", name)
-                # print args if present
-                if getattr(tc, "args", None):
-                    print("  args:", tc.args)
-            except Exception as e:
-                print("tool_call inspect error:", e)
+                return json.dumps(fr.response, indent=2, ensure_ascii=False)
+            except Exception:
+                return str(fr.response)
+    except Exception:
+        pass
+    return None
+
+
+def pretty_print_results(source_name: str, results):
+    """
+    results: could be either a list of dicts (preferred) or a long string.
+    Will print a short table: index | title | source | link
+    """
+    print(f"\n--- {source_name} (top {min(5, len(results) if results else 0)}) ---")
+    if not results:
+        print("[no results]")
+        return
+
+    # if results is a string, just print first 800 chars
+    if isinstance(results, str):
+        print(results[:800] + ("..." if len(results) > 800 else ""))
+        return
+
+    # assume list of dicts
+    for i, r in enumerate(results[:5], start=1):
+        title = r.get("title", "No Title")
+        src = r.get("source", "") or r.get("authors", "")
+        link = r.get("link", r.get("url", ""))
+        print(f"{i}. {title}")
+        if src:
+            print(f"   Source: {src}")
+        if link:
+            print(f"   Link: {link}")
+        snippet = r.get("snippet")
+        if snippet:
+            print(f"   Snippet: {snippet[:180]}{'...' if len(snippet) > 180 else ''}")
+        print()
+
+
+
+def print_event_debug(ev, index=None):
+    """
+    Print all interesting bits of an event to help debug ADK shapes:
+      - messages -> content.parts -> text / function_response
+      - content.parts -> text / function_response
+      - tool_calls (with args)
+      - raw event repr (short)
+    """
+    header = f"--- EVENT [{index}] ---" if index is not None else "--- EVENT ---"
+    print(header)
+    # quick repr
+    try:
+        print("repr:", repr(ev)[:1000])
+    except Exception:
+        pass
+
+    # messages[*]
+    try:
+        if getattr(ev, "messages", None):
+            print("Has ev.messages (count):", len(ev.messages))
+            for mi, m in enumerate(ev.messages):
+                print(f"  message[{mi}] role:", getattr(m, "role", None))
+                if getattr(m, "tool_calls", None):
+                    print("    message.tool_calls:", [getattr(tc.function, "name", "<no-name>") for tc in m.tool_calls])
+                if getattr(m, "content", None) and getattr(m.content, "parts", None):
+                    for pi, p in enumerate(m.content.parts):
+                        pt = safe_text_of(p)
+                        print(f"    msg.content.part[{pi}] text/funcresp: ", (pt[:500] if pt else None))
+        elif getattr(ev, "content", None) and getattr(ev.content, "parts", None):
+            print("Has ev.content.parts")
+            for pi, p in enumerate(ev.content.parts):
+                pt = safe_text_of(p)
+                print(f"  content.part[{pi}] text/funcresp: ", (pt[:500] if pt else None))
+    except Exception as e:
+        print("Error while printing messages/content parts:", e)
+
+    # top-level tool_calls
+    try:
+        tcs = getattr(ev, "tool_calls", None)
+        if tcs:
+            print("Top-level tool_calls detected:", len(tcs))
+            for tc in tcs:
+                try:
+                    fname = getattr(tc.function, "name", "<no-name>")
+                    print("  tool name:", fname)
+                    if getattr(tc, "args", None):
+                        print("   args:", tc.args)
+                except Exception as e:
+                    print("   error printing tool_call:", e)
+    except Exception as e:
+        print("Error inspecting tool_calls:", e)
+
+    print("--- end event ---\n")
 
 
 def main():
-    router_agent = get_router_agent()  # returns an LlmAgent router configured with AgentTools
+    router_agent = get_talk_agent()  # should return your LlmAgent router configured with AgentTools
+    # Build a small app for the check
     app = App(name="sanity_app", root_agent=router_agent, resumability_config=ResumabilityConfig(is_resumable=True))
     session_service = InMemorySessionService()
     runner = Runner(app=app, session_service=session_service)
@@ -81,33 +163,31 @@ def main():
 
     # create session safely
     ensure_session_sync(runner.session_service, app.name, USER, SESSION)
-    print("Session created.")
+    print("Session created.\n")
 
-    # Make a test query that is clearly biomedical (should route to PubMedResearcher)
+    # sanity query (biomedical)
     test_query = "immune system"
 
+    from google.genai import types as gen_types
     content = gen_types.Content(role="user", parts=[gen_types.Part.from_text(text=test_query)])
 
     print("\n--- Running router (expecting tool call to a researcher) ---\n")
     events = runner.run(user_id=USER, session_id=SESSION, new_message=content)
 
     last_event = None
-    for ev in events:
+    for idx, ev in enumerate(events):
         last_event = ev
         # print everything we see in each streaming event to aid debugging
-        print_event_debug(ev)
+        print_event_debug(ev, index=idx)
 
     if last_event is None:
         print("No events returned by runner.")
         return
 
-    # If the router called a tool, runner usually returns additional events with the tool/run outputs.
-    # Check last_event for any tool_calls or message text
     print("\n--- SUMMARY of last event ---")
     print_event_debug(last_event)
 
-    # If router didn't call a tool, show last textual output for diagnosis
-    # (helps you tune router instruction)
+    # Try extracting textual parts from last_event for a quick human-readable check
     text_parts = []
     try:
         if hasattr(last_event, "messages") and last_event.messages:
@@ -116,27 +196,38 @@ def main():
                     for p in m.content.parts:
                         if getattr(p, "text", None):
                             text_parts.append(p.text)
+                        else:
+                            fr = getattr(p, "function_response", None)
+                            if fr and getattr(fr, "response", None):
+                                text_parts.append(str(fr.response))
+        elif getattr(last_event, "content", None) and getattr(last_event.content, "parts", None):
+            for p in last_event.content.parts:
+                if getattr(p, "text", None):
+                    text_parts.append(p.text)
+                else:
+                    fr = getattr(p, "function_response", None)
+                    if fr and getattr(fr, "response", None):
+                        text_parts.append(str(fr.response))
     except Exception:
         pass
 
     if text_parts:
         joined = "\n".join(text_parts)
-        print("\nRouter produced text (no tool call detected?):\n", joined[:2000])
+        print("\nRouter produced text/tool-response (summary):\n", joined[:4000])
         print(
-            "\nIf this is a natural-language answer instead of a tool invocation, try making the router instruction "
-            "more explicit and add 'CALL the tool' examples.")
+            "\nIf this is a natural-language answer instead of a tool invocation, make the router instruction\nmore explicit ('CALL the tool named X' and provide examples).")
     else:
         print("\nNo textual parts found in last event (tool-call only or different event shape).")
 
-    # Quick sanity: call tools directly (bypass agents) so you know they work
+    # Quick sanity: call tools directly (bypass agents) so you know they work locally
     print("\n--- Direct tool sanity checks ---")
-    print("PubMed quick call (top 1):")
-    pm = PubMedTool(max_results=5).execute("immune system")
-    print(pm)
+    print("PubMed quick call (top 5):")
+    pm_out = PubMedTool(max_results=5).execute("immune system")
+    pretty_print_results("PubMed", pm_out.get("result") if isinstance(pm_out, dict) else pm_out)
 
     print("\nGoogle Scholar quick call (string result) — requires SERPAPI_API_KEY:")
-    gs = GoogleScholarTool().execute("human organoids")
-    print(gs)
+    gs_out = GoogleScholarTool().execute("human organoids")
+    pretty_print_results("Google Scholar", gs_out.get("result") if isinstance(gs_out, dict) else gs_out)
 
 
 if __name__ == "__main__":
