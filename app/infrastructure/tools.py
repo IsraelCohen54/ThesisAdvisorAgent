@@ -13,6 +13,46 @@ if api_key:
     Entrez.api_key = api_key
 
 
+class GoogleScholarTool:
+    """Google Scholar search using SerpApi. Returns formatted string for LLM consumption."""
+
+    def execute(self, query: str) -> Dict[str, Any]:
+        """Return {'result': [ {title, source, link, snippet}, ... ] }"""
+        api_key = os.getenv("SERPAPI_API_KEY")
+        if not api_key:
+            logger.error("SERPAPI_API_KEY not found. Skipping Google Scholar search.")
+            return {"error": "API Key Missing"}
+
+        logger.info(f"[ScholarTool] Searching: {query}")
+
+        try:
+            params = {"engine": "google_scholar", "q": query, "api_key": api_key, "num": 5}
+            response = requests.get("https://serpapi.com/search.json", params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            results = []
+            for r in data.get("organic_results", [])[:5]:
+                title = r.get("title", "No Title")
+                snippet = r.get("snippet", "") or r.get("snippet_highlighted", "")
+                link = r.get("link", "N/A")
+                pub_info = ""
+                # SerpApi sometimes exposes publication detail in different keys:
+                if r.get("publication_info"):
+                    pub_info = r["publication_info"].get("summary", "") or r["publication_info"].get("metadata", "")
+                results.append({
+                    "title": title,
+                    "source": pub_info,
+                    "link": link,
+                    "snippet": (snippet or "")[:300]
+                })
+            return {"result": results}
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"SerpApi request failed: {e}")
+            return {"error": f"SerpApi Error: {e}"}
+
+
 class PubMedTool:
     """PubMed search tool using Biopython. Returns formatted string for LLM consumption."""
 
@@ -64,43 +104,3 @@ class PubMedTool:
         except Exception as e:
             logger.exception("PubMed search failed")
             return {"error": str(e)}
-
-
-class GoogleScholarTool:
-    """Google Scholar search using SerpApi. Returns formatted string for LLM consumption."""
-
-    def execute(self, query: str) -> Dict[str, Any]:
-        """Return {'result': [ {title, source, link, snippet}, ... ] }"""
-        api_key = os.getenv("SERPAPI_API_KEY")
-        if not api_key:
-            logger.error("SERPAPI_API_KEY not found. Skipping Google Scholar search.")
-            return {"error": "API Key Missing"}
-
-        logger.info(f"[ScholarTool] Searching: {query}")
-
-        try:
-            params = {"engine": "google_scholar", "q": query, "api_key": api_key, "num": 5}
-            response = requests.get("https://serpapi.com/search.json", params=params)
-            response.raise_for_status()
-            data = response.json()
-
-            results = []
-            for r in data.get("organic_results", [])[:5]:
-                title = r.get("title", "No Title")
-                snippet = r.get("snippet", "") or r.get("snippet_highlighted", "")
-                link = r.get("link", "N/A")
-                pub_info = ""
-                # SerpApi sometimes exposes publication detail in different keys:
-                if r.get("publication_info"):
-                    pub_info = r["publication_info"].get("summary", "") or r["publication_info"].get("metadata", "")
-                results.append({
-                    "title": title,
-                    "source": pub_info,
-                    "link": link,
-                    "snippet": (snippet or "")[:300]
-                })
-            return {"result": results}
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"SerpApi request failed: {e}")
-            return {"error": f"SerpApi Error: {e}"}

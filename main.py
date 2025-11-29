@@ -3,16 +3,16 @@ import uuid
 import json
 import asyncio
 import logging
+import ast  # <--- NEW: Needed to parse the python dictionary string safely
 from typing import Any, List
 
-from google.adk.apps.app import App, ResumabilityConfig
+from google.adk.apps.app import App
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.adk.models.google_llm import Gemini
 from google.genai import types as gen_types
 
 from app.core.agents import get_talk_agent
-from app.infrastructure.tools import PubMedTool, GoogleScholarTool
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(message)s')
@@ -20,49 +20,74 @@ logger = logging.getLogger("ThesisAdvocator")
 logger.setLevel(logging.INFO)
 
 
-# --- Helper: Output Formatting ---
+# --- Helper: The "Pretty Printer" ---
 def format_results_for_display(response_obj: Any) -> str:
-    """Cleanly formats the messy output that might be dict, list, string, or JSON-string."""
+    """
+    Parses raw tool output (JSON, Dict string, or List) and returns a beautiful
+    text format for the user.
+    """
     if response_obj is None:
         return "No results found."
 
-    # 1. Unwrap JSON strings
+    # 1. PARSING: Try to turn strings back into Lists/Dicts
     if isinstance(response_obj, str):
+        cleaned = response_obj.strip()
         try:
-            # If the string is actually a JSON repr of a dict/list, parse it
-            if response_obj.strip().startswith("{") or response_obj.strip().startswith("["):
-                response_obj = json.loads(response_obj)
-            else:
-                return response_obj  # It's just a normal string text
-        except:
-            pass  # Keep as string
+            # Case A: Proper JSON (Double quotes)
+            if cleaned.startswith("{") or cleaned.startswith("["):
+                response_obj = json.loads(cleaned)
+        except json.JSONDecodeError:
+            try:
+                # Case B: Python Dict String (Single quotes - typical from your tools.py)
+                response_obj = ast.literal_eval(cleaned)
+            except (ValueError, SyntaxError):
+                pass  # It's just normal text, keep it as string
 
-    # 2. Extract 'result' key if it exists
+    # 2. EXTRACTION: Get the list from inside the dict
     if isinstance(response_obj, dict):
         if "error" in response_obj:
-            return f"Error: {response_obj['error']}"
-        response_obj = response_obj.get("result", response_obj)
+            return f"❌ Error: {response_obj['error']}"
+        # Grab content from 'result', 'organic_results', or return as is
+        response_obj = response_obj.get("result", response_obj.get("organic_results", response_obj))
 
-    # 3. Handle List of Dicts (The ideal format)
+    # 3. FORMATTING: Iterate through the list and style it
     if isinstance(response_obj, list):
+        if not response_obj:
+            return "No relevant results found."
+
         lines = []
         for i, item in enumerate(response_obj, 1):
             if isinstance(item, dict):
+                # Safely get fields
                 title = item.get("title", "No Title")
-                source = item.get("source") or item.get("journal", "")
-                link = item.get("link") or item.get("url", "")
-                snippet = item.get("snippet", "")[:200].replace("\n", " ")
+                authors = item.get("authors") or item.get("AU")
+                source = item.get("source") or item.get("journal")
+                link = item.get("link") or item.get("url") or "No link"
+                snippet = item.get("snippet", item.get("abstract", ""))
 
-                lines.append(f"{i}. **{title}**")
-                if source: lines.append(f"   Source: {source}")
-                if link: lines.append(f"   Link: {link}")
-                if snippet: lines.append(f"   Snippet: {snippet}...")
-                lines.append("")
+                # Cleanup snippet
+                if snippet:
+                    snippet = snippet[:250].replace("\n", " ") + "..."
+
+                # Build the visual block
+                lines.append(f"{i}. {title}")  # Plain text title
+
+                # Add metadata with indentation
+                if authors:
+                    lines.append(f"   👤 Authors: {authors}")
+                if source:
+                    lines.append(f"   📰 Source:  {source}")
+                if snippet:
+                    lines.append(f"   📖 Snippet: {snippet}")
+                lines.append(f"   🔗 Link:    {link}")
+                lines.append("")  # Empty line between results
             else:
+                # Fallback if item isn't a dict
                 lines.append(f"{i}. {str(item)}")
+
         return "\n".join(lines)
 
-    # 4. Fallback
+    # 4. FALLBACK: Just return the string
     return str(response_obj)
 
 
@@ -72,19 +97,16 @@ def run_debaters(thesis_text: str, evidence_text: str):
     print("\n⚖️  Running Debaters...")
     model = Gemini(model="gemini-2.5-flash", api_key=os.getenv("GEMINI_API_KEY"))
 
-    # We ask for plain text to avoid parsing issues
     pro_prompt = f"You are a PRO debater. Analyze this thesis based on the evidence.\nThesis: {thesis_text}\nEvidence: {evidence_text}\n\nProvide 3 strong PRO points."
     con_prompt = f"You are a CON debater. Analyze this thesis based on the evidence.\nThesis: {thesis_text}\nEvidence: {evidence_text}\n\nProvide 3 strong CON points and risk factors."
 
     try:
-        # Use direct API client for speed
         pro_resp = model.api_client.models.generate_content(model="gemini-2.5-flash", contents=pro_prompt)
         con_resp = model.api_client.models.generate_content(model="gemini-2.5-flash", contents=con_prompt)
 
         print(f"\n✅ --- PRO Argument ---\n{pro_resp.text}")
         print(f"\n❌ --- CON Argument ---\n{con_resp.text}")
 
-        # Synthesis
         synth_prompt = f"Synthesize these two arguments into a final recommendation:\nPRO: {pro_resp.text}\nCON: {con_resp.text}"
         synth_resp = model.api_client.models.generate_content(model="gemini-2.5-flash", contents=synth_prompt)
         print(f"\n📝 --- FINAL SYNTHESIS ---\n{synth_resp.text}")
@@ -97,7 +119,7 @@ def run_debaters(thesis_text: str, evidence_text: str):
 async def main():
     print("🎓 Thesis Advocator — Interactive Agent")
 
-    # 1. Initialize System (ONCE)
+    # 1. Initialize System
     talk_agent = get_talk_agent()
     app = App(name="ThesisApp", root_agent=talk_agent)
     runner = Runner(app=app, session_service=InMemorySessionService())
@@ -105,7 +127,7 @@ async def main():
     user_id = "user_1"
     session_id = f"session_{uuid.uuid4().hex[:6]}"
 
-    # Create session explicitly
+    # Create session
     await runner.session_service.create_session(app_name="ThesisApp", user_id=user_id, session_id=session_id)
 
     thesis_input = input("\n📝 Enter your thesis/idea: ").strip()
@@ -116,8 +138,6 @@ async def main():
 
         print(f"\n🔎 Searching for: {thesis_input}...")
 
-        # 2. Run the Agent
-        # We use run_async to stay in the loop
         content = gen_types.Content(role="user", parts=[gen_types.Part.from_text(text=thesis_input)])
 
         tool_output = None
@@ -125,32 +145,34 @@ async def main():
 
         try:
             async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=content):
-                # Capture function responses (The structured data)
                 if event.content and event.content.parts:
                     for part in event.content.parts:
+                        # 1. Priority: Check for structured function response
                         if part.function_response:
-                            # This is the raw data from the tool
-                            tool_output = part.function_response.response.get("result")
+                            # Try to get 'result' directly if the tool returns a dict
+                            resp = part.function_response.response
+                            tool_output = resp.get("result") if isinstance(resp, dict) else resp
+
+                        # 2. Capture text (in case agent talks)
                         if part.text:
                             full_text.append(part.text)
         except Exception as e:
             print(f"❌ Error during search: {e}")
             break
 
-        # 3. Display Results
-        # If we got raw tool data, format it. If not, show whatever text the agent generated.
+        print("-" * 60)
+        # Display Logic: Prefer Tool Output -> Then Agent Text
         if tool_output:
-            final_display = format_results_for_display(tool_output)
+            print(format_results_for_display(tool_output))
         elif full_text:
-            final_display = "\n".join(full_text)
+            # Fallback: Sometimes the agent output IS the tool output string
+            combined_text = "\n".join(full_text)
+            print(format_results_for_display(combined_text))
         else:
-            final_display = "No results found (Agent did not return text or data)."
-
-        print("-" * 60)
-        print(final_display)
+            print("No results found.")
         print("-" * 60)
 
-        # 4. Human Loop
+        # Human Loop
         choice = input("\n[Y]es (exact match) / [N]o (debate it) / [R]efine / [Q]uit: ").strip().lower()
 
         if choice == 'y':
@@ -160,17 +182,16 @@ async def main():
                 continue
             break
         elif choice == 'n':
-            # Run debate on the current evidence
-            run_debaters(thesis_input, final_display)
+            evidence = str(tool_output) if tool_output else "\n".join(full_text)
+            run_debaters(thesis_input, evidence)
             break
         elif choice == 'r':
             thesis_input = input("Enter refined query: ").strip()
-            continue  # Loop again with new input
+            continue
         else:
             print("Goodbye.")
             break
 
 
 if __name__ == "__main__":
-    # Run the main async loop
     asyncio.run(main())
