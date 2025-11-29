@@ -7,9 +7,7 @@
     <list default="true" id="cf7c5574-0af1-4e8b-ae64-f7c9ce975e8f" name="Changes" comment="current push">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/core/agents.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/core/agents.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/infrastructure/tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/infrastructure/tools.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_agile_steps/sanity_check_tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_agile_steps/sanity_check_tools.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -25,6 +23,7 @@
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="RESET_MODE" value="HARD" />
   </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 0
@@ -35,28 +34,28 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python.Gemini_API_key_connections (1).executor": "Run",
-    "Python.main.executor": "Run",
-    "Python.pubmed_tool_sanity_check.executor": "Run",
-    "Python.python check.executor": "Run",
-    "Python.routing_logic (1).executor": "Run",
-    "Python.routing_logic.executor": "Run",
-    "Python.routing_tester.executor": "Run",
-    "Python.sanity_check_scholar_tool.executor": "Run",
-    "Python.sanity_check_tools (1).executor": "Run",
-    "Python.sanity_check_tools.executor": "Run",
-    "Python.tools.executor": "Run",
-    "Python.verify_API_key_setup (1).executor": "Run",
-    "Python.verify_API_key_setup.executor": "Run",
-    "Python.verify_setup.executor": "Run",
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "deletionFromPopupRequiresConfirmation": "false",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.Gemini_API_key_connections (1).executor&quot;: &quot;Run&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;Python.pubmed_tool_sanity_check.executor&quot;: &quot;Run&quot;,
+    &quot;Python.python check.executor&quot;: &quot;Run&quot;,
+    &quot;Python.routing_logic (1).executor&quot;: &quot;Run&quot;,
+    &quot;Python.routing_logic.executor&quot;: &quot;Run&quot;,
+    &quot;Python.routing_tester.executor&quot;: &quot;Run&quot;,
+    &quot;Python.sanity_check_scholar_tool.executor&quot;: &quot;Run&quot;,
+    &quot;Python.sanity_check_tools (1).executor&quot;: &quot;Run&quot;,
+    &quot;Python.sanity_check_tools.executor&quot;: &quot;Run&quot;,
+    &quot;Python.tools.executor&quot;: &quot;Run&quot;,
+    &quot;Python.verify_API_key_setup (1).executor&quot;: &quot;Run&quot;,
+    &quot;Python.verify_API_key_setup.executor&quot;: &quot;Run&quot;,
+    &quot;Python.verify_setup.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;deletionFromPopupRequiresConfirmation&quot;: &quot;false&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="D:\PycharmProjects\ThesisAdvocatorAgent" />
