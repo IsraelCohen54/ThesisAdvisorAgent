@@ -14,6 +14,8 @@ from google.genai import types as gen_types
 
 from app.core.agents import get_talk_agent
 
+from anylize_and_recommend import execute_debate_process
+
 # --- Logging Setup ---
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(message)s')
 logger = logging.getLogger("ThesisAdvocator")
@@ -92,13 +94,13 @@ def format_results_for_display(response_obj: Any) -> str:
 
 
 # --- Helper: Debater ---
-def run_debaters(thesis_text: str, evidence_text: str):
+def run_debaters(thesis_text: str, references_text: str):
     """Run the Debater analysis (Sync, because it's a simple API call)"""
     print("\n⚖️  Running Debaters...")
     model = Gemini(model="gemini-2.5-flash", api_key=os.getenv("GEMINI_API_KEY"))
 
-    pro_prompt = f"You are a PRO debater. Analyze this thesis based on the evidence.\nThesis: {thesis_text}\nEvidence: {evidence_text}\n\nProvide 3 strong PRO points."
-    con_prompt = f"You are a CON debater. Analyze this thesis based on the evidence.\nThesis: {thesis_text}\nEvidence: {evidence_text}\n\nProvide 3 strong CON points and risk factors."
+    pro_prompt = f"You are a PRO debater. Analyze this thesis based on the references.\nThesis: {thesis_text}\nreferences: {references_text}\n\nProvide 3 strong PRO points."
+    con_prompt = f"You are a CON debater. Analyze this thesis based on the references.\nThesis: {thesis_text}\nreferences: {references_text}\n\nProvide 3 strong CON points and risk factors."
 
     try:
         pro_resp = model.api_client.models.generate_content(model="gemini-2.5-flash", contents=pro_prompt)
@@ -182,8 +184,18 @@ async def main():
                 continue
             break
         elif choice == 'n':
-            evidence = str(tool_output) if tool_output else "\n".join(full_text)
-            run_debaters(thesis_input, evidence)
+            references = str(tool_output) if tool_output else "\n".join(full_text)
+            final_result = await execute_debate_process(
+                thesis_text=thesis_input,
+                references_json=references,
+                runner=runner,
+                user_id=user_id,
+                session_id=session_id,
+                api_key=os.getenv("GEMINI_API_KEY"),
+                blocking_mode="to_thread"
+            )
+
+            print(final_result)
             break
         elif choice == 'r':
             thesis_input = input("Enter refined query: ").strip()
