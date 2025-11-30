@@ -153,43 +153,43 @@ class ContextAwareJudge:
     def __init__(self, thesis_text: str, formatted_references: str, criteria_context: str,
                  api_key: Optional[str] = None):
         self.model = Gemini(model="gemini-2.5-flash", api_key=api_key)
-        self.instruction = (f""""You are a neutral and rigorous Judge.
-You must decide whether the PRO or CON debater has presented the stronger case for this thesis idea.
 
-Thesis: {thesis_text}
-Evaluation Criteria: {criteria_context}
-
-Context (reference summaries and evidence):
-{formatted_references}
-
-JUDGING RULES:
-1. Judge only the strength, clarity, and logical quality of the arguments presented by PRO and CON based on {criteria_context}.
-2. Do NOT assume that negative arguments are stronger by default. Treat PRO and CON with equal burden of proof.
-3. When both sides make reasonable equal points, **lean toward PRO** as such identical thesis wasn't found at prior step,
-   unless the thesis has a clear, concrete or unfixable flaw.
-4. References may support arguments but are NOT the deciding factor; the deciding factor is logical reasoning and argument strength based on {criteria_context}.
-
-DECISION FORMAT:
-- First: Announce the winner: PRO or CON.
-- Second: Provide a short justification grounded strictly in logic according to the stated criteria.
-
-GUIDANCE WHEN CON WINS:
-If you choose CON:
-- You MUST also help the user.
-- Provide constructive steps for how the thesis could be improved, reframed, narrowed,
-  or applied in a context where it *would* meet at least some criteria and even better, pro would win.
-- Emphasize salvageable elements rather than total rejection.
-
-GUIDANCE WHEN PRO WINS:
-If you choose PRO:
-- Briefly explain what aspects make the thesis promising and feasible, and what strengths stood out.
-""")
+        # We explicitly ask for per-round opening/rebuttal scoring and give weights:
+        #   - Opening claim weight = 0.7
+        #   - Rebuttal weight = 0.3
+        # Final round (round 5) counts as a "strengthen" round with weight 0.5 of a normal round.
+        # Tie-break rule: if aggregated weighted totals are within 1 point, prefer PRO unless CON demonstrated
+        # an unfixable logical flaw.
+        self.instruction = (
+            f"You are a neutral, rigorous Judge. Do not use recency as a shortcut to decide.\n\n"
+            f"Thesis: {thesis_text}\n"
+            f"Evaluation Criteria: {criteria_context}\n\n"
+            f"Context (references):\n{formatted_references}\n\n"
+            "SCORING PROTOCOL (strict):\n"
+            "- Debate is organized by rounds 1..5. For rounds 1..4 a round contains: OPENING (speaker A) then REBUTTAL (speaker B).\n"
+            "- The Opening claim is the primary piece of evidence (weight 0.7). The Rebuttal is secondary (weight 0.3).\n"
+            "- Round 5 is a Strengthen-only pair: both sides present closing strengthening statements (no rebuttal). "
+            "Round 5 counts as 0.5 of a normal round.\n"
+            "- For each round, assign two integers 1..10:\n"
+            "    * OPENING=<int>  (how convincing the opening claim was for that round)\n"
+            "    * REBUTTAL=<int> (how effective the responder's rebuttal was)\n"
+            "- The Judge MUST evaluate values for every round independently (use only the text from that round for each score).\n"
+            "- Aggregate weighted sums across rounds to decide the winner: sum(opening*0.7 + rebuttal*0.3) for each side.\n"
+            "- Tie-break: if totals are within 1 point, prefer PRO unless CON exposed a clear, unfixable logical flaw.\n\n"
+            "OUTPUT FORMAT (exact, machine-parsable):\n"
+            "RoundScores:\n"
+            "Round 1: OPENING_PRO=<int>, REBUTTAL_PRO=<int>, OPENING_CON=<int>, REBUTTAL_CON=<int>\n"
+            "Round 2: OPENING_PRO=<int>, REBUTTAL_PRO=<int>, OPENING_CON=<int>, REBUTTAL_CON=<int>\n"
+            "Round 3: OPENING_PRO=<int>, REBUTTAL_PRO=<int>, OPENING_CON=<int>, REBUTTAL_CON=<int>\n"
+            "Round 4: OPENING_PRO=<int>, REBUTTAL_PRO=<int>, OPENING_CON=<int>, REBUTTAL_CON=<int>\n"
+            "Round 5: OPENING_PRO=<int>, OPENING_CON=<int>  # final strengthen-only, REBUTTAL fields omitted\n\n"
+            "AGGREGATE: PRO=<float>, CON=<float>\n"
+            "WINNER: PRO or CON\n"
+            "JUSTIFICATION: <2-4 short sentences grounded in scoring and criteria>\n\n"
+            "If CON wins: provide 3 constructive concrete suggestions to improve the thesis so PRO would likely win next time.\n"
+        )
 
     def judge(self, transcript: str) -> str:
-        """
-        Synchronous judge call using the lower-level sync API.
-        Safe to run in asyncio.to_thread(...) or directly in blocking mode.
-        """
         model_name = getattr(self.model, "model", "gemini-2.5-flash")
         prompt = f"{self.instruction}\n\nTRANSCRIPT:\n{transcript}"
         resp = self.model.api_client.models.generate_content(model=model_name, contents=prompt)
@@ -277,33 +277,62 @@ Protocol:
     # -----------------------
     # Debate phase
     # -----------------------
-    pro = ContextAwareDebateAgent("Agent PRO", "pro", thesis_text, formatted_refs, criteria, api_key=api_key)
+    # prepare agents
     con = ContextAwareDebateAgent("Agent CON", "con", thesis_text, formatted_refs, criteria, api_key=api_key)
+    pro = ContextAwareDebateAgent("Agent PRO", "pro", thesis_text, formatted_refs, criteria, api_key=api_key)
 
-    transcript = ""
-    last_arg = None
+    transcript_lines = []
+    # We'll alternate the opener each round to remove a systematic last-speaker advantage:
+    # Odd rounds: PRO opens, then CON rebuts.
+    # Even rounds: CON opens, then PRO rebuts.
+    # Round 5: both produce a strengthen-only closing statement (no rebuttal); lower weight.
 
-    for i in range(5):
-        print(f"\n--- Round {i + 1} ---")
+    for round_idx in range(1, 5):
+        print(f"\n--- Round {round_idx} ---")
+        transcript_lines.append(f"--- Round {round_idx} ---")
 
-        if blocking_mode == "to_thread":
-            last_arg = await asyncio.to_thread(pro.argue, last_arg)
+        if round_idx % 2 == 1:
+            # PRO opens, CON rebuts
+            pro_open = await asyncio.to_thread(pro.argue, None) if blocking_mode == "to_thread" else pro.argue(None)
+            print(f"🔵 PRO (R{round_idx} OPEN): {pro_open}")
+            transcript_lines.append(f"PRO_OPEN: {pro_open}")
+
+            con_reb = await asyncio.to_thread(con.argue, pro_open) if blocking_mode == "to_thread" else con.argue(
+                pro_open)
+            print(f"🔴 CON (R{round_idx} REBUTTAL): {con_reb}")
+            transcript_lines.append(f"CON_REBUT: {con_reb}")
+
         else:
-            last_arg = pro.argue(last_arg)
+            # CON opens, PRO rebuts
+            con_open = await asyncio.to_thread(con.argue, None) if blocking_mode == "to_thread" else con.argue(None)
+            print(f"🔴 CON (R{round_idx} OPEN): {con_open}")
+            transcript_lines.append(f"CON_OPEN: {con_open}")
 
-        print(f"🔵 PRO: {last_arg}")
-        transcript += f"PRO: {last_arg}\n"
-        # short non-blocking pause so stdout prints cleanly
-        await asyncio.sleep(0.1)
+            pro_reb = await asyncio.to_thread(pro.argue, con_open) if blocking_mode == "to_thread" else pro.argue(
+                con_open)
+            print(f"🔵 PRO (R{round_idx} REBUTTAL): {pro_reb}")
+            transcript_lines.append(f"PRO_REBUT: {pro_reb}")
 
-        if blocking_mode == "to_thread":
-            last_arg = await asyncio.to_thread(con.argue, last_arg)
-        else:
-            last_arg = con.argue(last_arg)
+        # small pause
+        await asyncio.sleep(0.05)
 
-        print(f"🔴 CON: {last_arg}")
-        transcript += f"CON: {last_arg}\n"
-        await asyncio.sleep(0.1)
+    # Round 5: final strengthen-only for both
+    print("\n--- Round 5 (FINAL: Strengthen-only) ---")
+    transcript_lines.append("--- Round 5 (FINAL) ---")
+    final_instruction = "(FINAL_ROUND: Strengthen your own case. Do NOT rebut the opponent. Add new supporting points, summarize the strongest arguments.)"
+
+    pro_final = await asyncio.to_thread(pro.argue, final_instruction) if blocking_mode == "to_thread" else pro.argue(
+        final_instruction)
+    print(f"🔵 PRO (R5 FINAL): {pro_final}")
+    transcript_lines.append(f"PRO_FINAL: {pro_final}")
+
+    con_final = await asyncio.to_thread(con.argue, final_instruction) if blocking_mode == "to_thread" else con.argue(
+        final_instruction)
+    print(f"🔴 CON (R5 FINAL): {con_final}")
+    transcript_lines.append(f"CON_FINAL: {con_final}")
+
+    # Build transcript text (explicit markers help the Judge assign per-round scores)
+    transcript = "\n".join(transcript_lines)
 
     # -----------------------
     # Judging (blocking)
