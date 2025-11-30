@@ -3,7 +3,6 @@ import os
 import inspect
 import logging
 import json
-from types import SimpleNamespace
 
 # ADK imports
 from google.genai import types as gen_types
@@ -22,9 +21,9 @@ logger = logging.getLogger("sanity_check")
 if not os.getenv("GEMINI_API_KEY"):
     logger.error("GEMINI_API_KEY missing in env. Set it in PyCharm run configuration.")
 if not os.getenv("SERPAPI_API_KEY"):
-    logger.warning("SERPAPI_API_KEY missing — Scholar tests will fail without it.")
+    logger.warning("SERPAPI_API_KEY missing — Scholar evaluations will fail without it.")
 if not os.getenv("NCBI_API_KEY"):
-    logger.info("NCBI_API_KEY not set (ok for low-volume tests) — Entrez will still run but rate-limited.")
+    logger.info("NCBI_API_KEY not set (ok for low-volume evaluations) — Entrez will still run but rate-limited.")
 
 
 def ensure_session_sync(session_service, app_name, user_id, session_id):

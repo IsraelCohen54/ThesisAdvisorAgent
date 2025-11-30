@@ -4,7 +4,7 @@ import json
 import asyncio
 import logging
 import ast  # <--- NEW: Needed to parse the python dictionary string safely
-from typing import Any, List
+from typing import Any
 
 from google.adk.apps.app import App
 from google.adk.runners import Runner
@@ -12,13 +12,13 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.models.google_llm import Gemini
 from google.genai import types as gen_types
 
-from app.core.agents import get_talk_agent
+from app.core.agents import get_dialog_agent1
 
-from anylize_and_recommend import execute_debate_process
+from app.core.anylize_and_recommend import execute_debate_process
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(message)s')
-logger = logging.getLogger("ThesisAdvocator")
+logger = logging.getLogger("ThesisAdvisor")
 logger.setLevel(logging.INFO)
 
 
@@ -99,7 +99,7 @@ def run_debaters(thesis_text: str, references_text: str):
     print("\n⚖️  Running Debaters...")
     model = Gemini(model="gemini-2.5-flash", api_key=os.getenv("GEMINI_API_KEY"))
 
-    pro_prompt = f"You are a PRO debater. Analyze this thesis based on the references.\nThesis: {thesis_text}\nreferences: {references_text}\n\nProvide 3 strong PRO points."
+    pro_prompt = f"You are a PRO debater. Analyze this thesis based on the references.\nThesis: {thesis_text}\nreferences: {references_text}\n\nProvide 3 strong PRO points and how can you manage risk factors well."
     con_prompt = f"You are a CON debater. Analyze this thesis based on the references.\nThesis: {thesis_text}\nreferences: {references_text}\n\nProvide 3 strong CON points and risk factors."
 
     try:
@@ -119,18 +119,18 @@ def run_debaters(thesis_text: str, references_text: str):
 
 # --- Main Async Logic ---
 async def main():
-    print("🎓 Thesis Advocator — Interactive Agent")
+    print("🎓 Thesis Advisor — Interactive Agent")
 
     # 1. Initialize System
-    talk_agent = get_talk_agent()
-    app = App(name="ThesisApp", root_agent=talk_agent)
+    dialog_agent1 = get_dialog_agent1()
+    app = App(name="agents", root_agent=dialog_agent1)
     runner = Runner(app=app, session_service=InMemorySessionService())
 
     user_id = "user_1"
     session_id = f"session_{uuid.uuid4().hex[:6]}"
 
     # Create session
-    await runner.session_service.create_session(app_name="ThesisApp", user_id=user_id, session_id=session_id)
+    await runner.session_service.create_session(app_name="agents", user_id=user_id, session_id=session_id)
 
     thesis_input = input("\n📝 Enter your thesis/idea: ").strip()
 
@@ -175,15 +175,12 @@ async def main():
         print("-" * 60)
 
         # Human Loop
-        choice = input("\n[Y]es (exact match) / [N]o (debate it) / [R]efine / [Q]uit: ").strip().lower()
+        choice = input("\n[Q]uit (exact match) / [C]ontinue (debate it) / [R]efine/replace thesis idea: ").strip().lower()
 
-        if choice == 'y':
-            follow = input("Found it! [S]uggest new idea / [Q]uit: ").lower()
-            if follow == 's':
-                thesis_input = input("Enter new idea: ").strip()
-                continue
+        if choice == 'q':
+            print("If you would have another thesis idea, you are invited to try again!")
             break
-        elif choice == 'n':
+        elif choice == 'c':
             references = str(tool_output) if tool_output else "\n".join(full_text)
             final_result = await execute_debate_process(
                 thesis_text=thesis_input,
@@ -194,15 +191,14 @@ async def main():
                 api_key=os.getenv("GEMINI_API_KEY"),
                 blocking_mode="to_thread"
             )
-
             print(final_result)
             break
         elif choice == 'r':
-            thesis_input = input("Enter refined query: ").strip()
+            thesis_input = input("Enter refined thesis idea: ").strip()
             continue
         else:
-            print("Goodbye.")
-            break
+            thesis_input = input("Assuming you wanted to try again. \nPlease enter refined query: ").strip()
+            continue
 
 
 if __name__ == "__main__":

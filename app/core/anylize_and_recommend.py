@@ -1,12 +1,12 @@
 # anylize_and_recommend.py
 import asyncio
-import time
 import json
 import ast
 from typing import Optional, Any
 
 from google.adk.models.google_llm import Gemini
 from google.genai import types as gen_types
+
 
 # -----------------------
 # Helper: format references
@@ -30,7 +30,7 @@ def format_references_for_context(references_json_str: Any) -> str:
         if isinstance(references_json_str, (list, dict)):
             articles = references_json_str
         else:
-            # It's probably a string: try JSON first, then literal_eval
+            # It's probably a string, so try JSON first, then literal_eval
             cleaned = str(references_json_str).strip()
             if cleaned.startswith("{") or cleaned.startswith("["):
                 try:
@@ -91,13 +91,13 @@ def format_references_for_context(references_json_str: Any) -> str:
 # -----------------------
 class ContextAwareDebateAgent:
     def __init__(
-        self,
-        name: str,
-        stance: str,
-        thesis_text: str,
-        formatted_references: str,
-        criteria_context: str,
-        api_key: Optional[str] = None,
+            self,
+            name: str,
+            stance: str,
+            thesis_text: str,
+            formatted_references: str,
+            criteria_context: str,
+            api_key: Optional[str] = None,
     ):
         self.name = name
         self.stance = stance  # "pro" or "con"
@@ -107,16 +107,15 @@ class ContextAwareDebateAgent:
             f"Evaluation Criteria: {criteria_context}\n\n"
             f"{formatted_references}\n\n"
             "INSTRUCTIONS:\n"
-            "1. Use the specific details from the references above to support your point.\n"
-            "2. Refute the opponent's last argument.\n"
-            "3. Keep it professional, concise, and cite article numbers if relevant."
+            "1. You should be as persuade as you can According to criteria chosen (keep using only the truth).\n"
+            "2. If relevant, use the specific details from the references above (articles) to support your point.\n"
+            "3. Refute the opponent's last argument based on any available source and logic (use only logical truths)."
+            "4. \nKeep it professional, concise, and cite article data if relevant."
         )
 
-        # Keep using the sync Gemini client (we will call this in a thread)
         self.model = Gemini(model="gemini-2.5-flash-lite", api_key=api_key)
         self.history = [gen_types.Content(role="user", parts=[gen_types.Part.from_text(text=self.instruction)])]
 
-    # Replace ContextAwareDebateAgent.argue with this:
     def argue(self, opponent_argument: Optional[str] = None) -> str:
         """
         Blocking (sync) call that uses the lower-level synchronous client API.
@@ -151,14 +150,40 @@ class ContextAwareDebateAgent:
 
 
 class ContextAwareJudge:
-    def __init__(self, thesis_text: str, formatted_references: str, criteria_context: str, api_key: Optional[str] = None):
+    def __init__(self, thesis_text: str, formatted_references: str, criteria_context: str,
+                 api_key: Optional[str] = None):
         self.model = Gemini(model="gemini-2.5-flash", api_key=api_key)
-        self.instruction = (
-            f"You are a Judge.\nThesis: {thesis_text}\nCriteria: {criteria_context}\n\nContext:\n{formatted_references}\n\n"
-            "Task: Decide who used references and criteria best and provide a short justification."
-        )
+        self.instruction = (f""""You are a neutral and rigorous Judge.
+You must decide whether the PRO or CON debater has presented the stronger case for this thesis idea.
 
-    # Replace ContextAwareJudge.judge with this:
+Thesis: {thesis_text}
+Evaluation Criteria: {criteria_context}
+
+Context (reference summaries and evidence):
+{formatted_references}
+
+JUDGING RULES:
+1. Judge only the strength, clarity, and logical quality of the arguments presented by PRO and CON based on {criteria_context}.
+2. Do NOT assume that negative arguments are stronger by default. Treat PRO and CON with equal burden of proof.
+3. When both sides make reasonable equal points, **lean toward PRO** as such identical thesis wasn't found at prior step,
+   unless the thesis has a clear, concrete or unfixable flaw.
+4. References may support arguments but are NOT the deciding factor; the deciding factor is logical reasoning and argument strength.
+
+DECISION FORMAT:
+- First: Announce the winner: PRO or CON.
+- Second: Provide a short justification grounded strictly in logic according to the stated criteria.
+
+GUIDANCE WHEN CON WINS:
+If you choose CON:
+- You MUST also help the user.
+- Provide constructive steps for how the thesis could be improved, reframed, narrowed, or applied in a context where it *would* meet at least some criteria.
+- Emphasize salvageable elements rather than total rejection.
+
+GUIDANCE WHEN PRO WINS:
+If you choose PRO:
+- Briefly explain what aspects make the thesis promising and feasible, and what strengths stood out.
+""")
+
     def judge(self, transcript: str) -> str:
         """
         Synchronous judge call using the lower-level sync API.
@@ -174,14 +199,14 @@ class ContextAwareJudge:
 # Main: execute_debate_process (async)
 # -----------------------
 async def execute_debate_process(
-    thesis_text: str,
-    references_json: Any,
-    runner,
-    user_id: str,
-    session_id: str,
-    api_key: Optional[str] = None,
-    *,
-    blocking_mode: str = "to_thread",  # "to_thread" (recommended) or "direct"
+        thesis_text: str,
+        references_json: Any,
+        runner,
+        user_id: str,
+        session_id: str,
+        api_key: Optional[str] = None,
+        *,
+        blocking_mode: str = "to_thread"
 ):
     """
     Run: dialog (criteria selection using provided runner & session) -> debate -> judge.
@@ -189,9 +214,9 @@ async def execute_debate_process(
     """
     formatted_refs = format_references_for_context(references_json)
 
-    # -----------------------
-    # Dialog phase (reuse provided runner & session)
-    # -----------------------
+    # -----------------
+    #   Dialog phase
+    # -----------------
     async def run_criteria_dialog_with_runner() -> str:
         talk_instruction = f"""
 You are 'DialogAgent'.
@@ -201,18 +226,17 @@ Context/References available:
 {formatted_refs}
 
 Your Goal: Ask the user to choose the 3 most important evaluation criteria from:
-    1. "Personal Interest and Motivation"
+    1. "Scope and Fit"
     2. "Academic Relevance and Novelty"
     3. "Research Feasibility"
-    4. "Scope and Fit"
+    4. "Ethical Considerations"
     5. "Possible Methodology"
-    6. "Advisor Availability"
-    7. "Professional and Future Relevance"
-    8. "Ethical Considerations"
+    6. "Professional and Future Relevance"
+    7. "Personal Interest and Motivation" 
 
 Protocol:
 1. Ask the user to select 3.
-2. Ask if they want to add ONE custom criterion.
+2. Only after user answer, ask if they want to add ONE custom criterion.
 3. When finalized, output ONLY: "CRITERIA_FINALIZED: [The list]"
 """
         user_input = talk_instruction
@@ -258,7 +282,7 @@ Protocol:
     transcript = ""
     last_arg = None
 
-    for i in range(3):
+    for i in range(5):
         print(f"\n--- Round {i + 1} ---")
 
         if blocking_mode == "to_thread":

@@ -1,10 +1,13 @@
-ThesisAdvocator/
+ThesisAdvisor/
 ├── app/
 │   ├── core/           # Entities & Business Logic (The Brain)
-│   ├── interfaces/     # Abstract Base Classes (The Contracts/Protocols)
-│   ├── infrastructure/ # External Tools (Gemini, Arxiv, DuckDuckGo)
-│   └── services/       # Connects Logic to Tools
-├── tests/              # Automated Tests
+│   │    ---> Agents.py                ( - search and talk with user)
+│   │    ---> anylize_and_recommend.py ( - Debaters agents)
+│   └── infrastructure/ # External Tools (Google Scholar, Pubmed)
+│        ---> tools.py
+├── evaluations/        # Agents research evaluations
+         ---> researcher_finding_relevant_articles.py
 ├── .env                # API Keys (Never commit this to Git!)
 ├── requirements.txt    # Dependency list
-└── test_agile_steps/   # Agile Steps Verification Script
+├── test_agile_steps/   # Agile Steps Verification Scripts
+└── main.py             # main program

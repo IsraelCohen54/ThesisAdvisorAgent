@@ -4,7 +4,7 @@ import requests
 from typing import Any, Dict, List
 from Bio import Entrez, Medline  # pip install biopython
 
-logger = logging.getLogger("ThesisAdvocator")
+logger = logging.getLogger("ThesisAdvisor")
 
 # Configure Entrez
 Entrez.email = os.getenv("NCBI_CONTACT_EMAIL", "your-email@example.com")
