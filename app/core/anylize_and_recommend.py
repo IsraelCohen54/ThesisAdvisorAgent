@@ -167,7 +167,7 @@ JUDGING RULES:
 2. Do NOT assume that negative arguments are stronger by default. Treat PRO and CON with equal burden of proof.
 3. When both sides make reasonable equal points, **lean toward PRO** as such identical thesis wasn't found at prior step,
    unless the thesis has a clear, concrete or unfixable flaw.
-4. References may support arguments but are NOT the deciding factor; the deciding factor is logical reasoning and argument strength.
+4. References may support arguments but are NOT the deciding factor; the deciding factor is logical reasoning and argument strength based on {criteria_context}.
 
 DECISION FORMAT:
 - First: Announce the winner: PRO or CON.
@@ -176,7 +176,8 @@ DECISION FORMAT:
 GUIDANCE WHEN CON WINS:
 If you choose CON:
 - You MUST also help the user.
-- Provide constructive steps for how the thesis could be improved, reframed, narrowed, or applied in a context where it *would* meet at least some criteria.
+- Provide constructive steps for how the thesis could be improved, reframed, narrowed,
+  or applied in a context where it *would* meet at least some criteria and even better, pro would win.
 - Emphasize salvageable elements rather than total rejection.
 
 GUIDANCE WHEN PRO WINS:
