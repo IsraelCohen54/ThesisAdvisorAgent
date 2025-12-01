@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="b21eccd1-a0ce-4c15-80ed-33f95400a394" name="Changes" comment="pro + judge better logic">
+    <list default="true" id="b21eccd1-a0ce-4c15-80ed-33f95400a394" name="Changes" comment="pro + judge better logic refined">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/core/anylize_and_recommend.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/core/anylize_and_recommend.py" afterDir="false" />
     </list>
@@ -106,12 +106,21 @@
       <option name="project" value="LOCAL" />
       <updated>1764596650401</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="pro + judge better logic refined">
+      <option name="closed" value="true" />
+      <created>1764597023171</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1764597023171</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Updated debaters, bug fixes and more." />
     <MESSAGE value="pro + judge better logic" />
-    <option name="LAST_COMMIT_MESSAGE" value="pro + judge better logic" />
+    <MESSAGE value="pro + judge better logic refined" />
+    <option name="LAST_COMMIT_MESSAGE" value="pro + judge better logic refined" />
   </component>
 </project>

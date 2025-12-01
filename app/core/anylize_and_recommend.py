@@ -167,7 +167,7 @@ class ContextAwareJudge:
             f"Evaluation Criteria: {criteria_context}\n\n"
             f"Context (references):\n{formatted_references}\n\n"
             "**JUDGING CORE RULESET (STRICT ADHERENCE REQUIRED):**\n"
-            "**A. Feasibility Focus:** If the thesis is deemed **academically feasible** (meaning the research *can* be done, even if the thesis is not overly elaborate on the methodology), score the 'Research Feasibility' criterion highly for the PRO argument.\n"
+            "**A. Feasibility Focus & Constructive Potential (Primary Rule):** The primary goal is to validate the thesis idea. Score the 'Research Feasibility' criterion highly for the PRO argument if the research is **academically feasible** (meaning the research *can* be done, even if the thesis is not overly elaborate on the methodology). Actively look for ways to **fix or re-scope** the thesis to nullify CON's critical claims. Only score CON highly if their criticism is truly fundamental, unfixable, and renders the entire project non-viable. The main point is to help validate *why yes*, not *why not*.\n"
             "**B. Thesis is the Guideline:** The **Thesis is the guideline**. Judge the arguments strictly according to the content and constraints *explicitly stated in the thesis and criteria*, treating them as the *entire* scope of the research project.\n"
             "SCORING PROTOCOL:\n"
             "- Debate is organized by rounds 1..5. Assign points (1-10) for every speech based on logic, use of references, and alignment with the user's chosen criteria. Round 5 points should reflect the strength of the final synthesis.\n"
