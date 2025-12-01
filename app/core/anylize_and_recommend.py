@@ -1,3 +1,5 @@
+# ThesisAdvisorAgent/app/core/anylize_and_recommend.py
+import time
 import asyncio
 import json
 import ast
@@ -199,8 +201,22 @@ class ContextAwareJudge:
     def judge(self, transcript: str) -> str:
         model_name = getattr(self.model, "model", "gemini-2.5-flash")
         prompt = f"{self.instruction}\n\nTRANSCRIPT OF DEBATE:\n{transcript}"
-        resp = self.model.api_client.models.generate_content(model=model_name, contents=prompt)
-        return getattr(resp, "text", str(resp))
+
+        # Use a maximum of 3 retries
+        max_retries = 3
+        for attempt in range(max_retries):
+            resp = self.model.api_client.models.generate_content(
+                model=model_name, contents=prompt
+            )
+            if resp is not None:
+                return getattr(resp, "text", str(resp))
+
+            # Log the retry (optional but highly recommended)
+            print(f"API call failed (returned None), retrying in 2 seconds (Attempt {attempt + 1}/{max_retries})...")
+            time.sleep(2)
+
+        # If all attempts fail, raise a clear exception
+        raise RuntimeError(f"Failed to get a non-None response from the model after {max_retries} attempts.")
 
 
 # -----------------------
