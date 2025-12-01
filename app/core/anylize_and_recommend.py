@@ -1,11 +1,20 @@
-# anylize_and_recommend.py
 import asyncio
 import json
 import ast
-from typing import Optional, Any
+from typing import Any
 
 from google.adk.models.google_llm import Gemini
 from google.genai import types as gen_types
+from google.genai import types
+
+# Configure Retry
+retry_config = types.HttpRetryOptions(
+    attempts=5,
+    initial_delay=2,
+    http_status_codes=[429, 500, 503, 504],
+    max_delay=2,
+    exp_base=1.5
+)
 
 
 # -----------------------
@@ -13,48 +22,40 @@ from google.genai import types as gen_types
 # -----------------------
 def format_references_for_context(references_json_str: Any) -> str:
     """
-    Parse the incoming references (string/json/list/dict) and return a nicely
-    formatted text block suitable for LLM context.
-
-    Accepts:
-      - JSON string (double quotes)
-      - Python dict/list string (single quotes) -> ast.literal_eval
-      - Already-parsed list/dict
-      - None/empty -> returns a short message
+    Parse the incoming references and return a formatted text block.
     """
     try:
         if not references_json_str:
             return "No references provided."
 
-        # If already a dict/list, use it directly
         if isinstance(references_json_str, (list, dict)):
             articles = references_json_str
         else:
-            # It's probably a string, so try JSON first, then literal_eval
             cleaned = str(references_json_str).strip()
             if cleaned.startswith("{") or cleaned.startswith("["):
                 try:
                     articles = json.loads(cleaned)
                 except json.JSONDecodeError:
-                    # Try Python literal_eval (handles single quotes)
-                    articles = ast.literal_eval(cleaned)
+                    try:
+                        articles = ast.literal_eval(cleaned)
+                    except (ValueError, TypeError): # Using specific exceptions
+                        articles = cleaned  # Fallback
             else:
-                # Not JSON-like: try literal_eval, else treat as plain text
                 try:
                     articles = ast.literal_eval(cleaned)
-                except Exception:
-                    # fallback: return the raw text as one "reference"
+                except (ValueError, TypeError): # Using specific exceptions
                     return f"### AVAILABLE REFERENCES / CONTEXT ###\nRaw text:\n{cleaned}\n"
 
-        # At this point, expect articles to be a list of dicts (or a dict)
+        # Uniform processing
         if isinstance(articles, dict):
-            # Possibly a single article or results wrapper
-            # If it's a mapping with numeric keys, convert to list
             if all(isinstance(k, int) for k in articles.keys()):
                 articles = [articles[k] for k in sorted(articles.keys())]
             else:
-                # Wrap single dict into a list for uniform processing
                 articles = [articles]
+
+        # If it failed to become a list by now (e.g. just a string), return text
+        if not isinstance(articles, list):
+            return f"### AVAILABLE REFERENCES / CONTEXT ###\nRaw text:\n{str(articles)}\n"
 
         formatted_text = "### AVAILABLE REFERENCES / CONTEXT ###\n\n"
 
@@ -82,7 +83,6 @@ def format_references_for_context(references_json_str: Any) -> str:
         return formatted_text
 
     except Exception as e:
-        # Safe fallback: show a short message
         return f"Error formatting references: {e}\nRaw input (truncated): {str(references_json_str)[:400]}"
 
 
@@ -97,107 +97,103 @@ class ContextAwareDebateAgent:
             thesis_text: str,
             formatted_references: str,
             criteria_context: str,
-            api_key: Optional[str] = None,
     ):
         self.name = name
-        self.stance = stance  # "pro" or "con"
-        self.instruction = (
-            f"You are {name}. Stance: {stance.upper()}.\n"
+        self.stance = stance.upper()  # "PRO" or "CON"
+
+        # Base Persona instruction (general)
+        self.base_instruction = (
+            f"You are {name}. Stance: {self.stance}. Your goal is to be highly persuasive.\n"
             f"Thesis Topic: {thesis_text}\n"
-            f"Evaluation Criteria: {criteria_context}\n\n"
+            f"Evaluation Criteria chosen by user: {criteria_context}\n\n"
             f"{formatted_references}\n\n"
-            "INSTRUCTIONS:\n"
-            "1. You should be as persuade as you can According to criteria chosen (keep using only the truth).\n"
-            "2. If relevant, use the specific details from the references above (articles) to support your point.\n"
-            "3. Refute the opponent's last argument based on any available source and logic (use only logical truths)."
-            "4. \nKeep it professional, concise, and cite article data if relevant."
+            "GENERAL GUIDELINES:\n"
+            "1. Be persuasive based on the criteria chosen.\n"
+            "2. Use specific details from the provided references to support your point.\n"
+            "3. Maintain professional, concise, and logical consistency. **Be highly detailed and elaborate**."
         )
 
-        self.model = Gemini(model="gemini-2.5-flash-lite", api_key=api_key)
-        self.history = [gen_types.Content(role="user", parts=[gen_types.Part.from_text(text=self.instruction)])]
+        self.model = Gemini(
+            model="gemini-2.5-flash",
+            retry_options=retry_config,
+        )
 
-    def argue(self, opponent_argument: Optional[str] = None) -> str:
+        # History will now only store the final response of each turn, NOT the accumulating prompt
+        # We start with a placeholder for the base instruction
+        self.history = [self.base_instruction]
+
+    def argue(self, context_prompt: str) -> str:
         """
-        Blocking (sync) call that uses the lower-level synchronous client API.
-        We build a prompt from the stored history and call the API synchronously.
-        This will be safe to run inside asyncio.to_thread(...) as before.
+        Generates an argument.
+        'context_prompt' contains the specific instructions for the current round
+        and the opponent's immediate previous point.
         """
-        # Build a textual prompt from history (fallback if ADK content shapes vary)
-        parts = []
-        for content in self.history:
-            if getattr(content, "parts", None):
-                for p in content.parts:
-                    if getattr(p, "text", None):
-                        parts.append(p.text)
-        # Append the opponent argument / new prompt
-        if opponent_argument:
-            parts.append(f"Opponent said: {opponent_argument}\nYour rebuttal/point:")
-        else:
-            parts.append("Present your opening argument based on the references.")
 
-        prompt = "\n\n".join(parts)
+        # 1. Build the full, current prompt for this specific call
+        # Start with the base instruction to set the scene
+        prompt_parts = [self.base_instruction, "\n\n--- PREVIOUS ROUNDS' RESPONSES ---\n"]
 
-        # Use the lower-level sync API on the generated api_client
-        # Note: pass the model name used when creating the Gemini wrapper.
-        model_name = getattr(self.model, "model", "gemini-2.5-flash-lite")
-        resp = self.model.api_client.models.generate_content(model=model_name, contents=prompt)
+        # Add the entire debate history (previous responses only, no prompts)
+        # Start from 1 to skip the base instruction, which is already at the start
+        for i, h in enumerate(self.history[1:]):
+            prompt_parts.append(f"Response R{i+1}: {h}")
+
+        # Add the specific instruction for the current round
+        prompt_parts.append(f"\n\n--- CURRENT ROUND INSTRUCTION ---\n{context_prompt}")
+
+        full_prompt = "\n\n".join(prompt_parts)
+
+        # 2. Prepare the content object for the API call
+        content_to_send = [gen_types.Content(role="user", parts=[gen_types.Part.from_text(text=full_prompt)])]
+
+        # 3. Call Gemini (Sync)
+        model_name = getattr(self.model, "model", "gemini-2.5-flash")
+        resp = self.model.api_client.models.generate_content(model=model_name, contents=content_to_send)
 
         text = getattr(resp, "text", str(resp))
 
-        # Append to history to keep context for future turns
-        self.history.append(gen_types.Content(role="model", parts=[gen_types.Part.from_text(text=text)]))
+        # 4. Update internal history (store the model's output)
+        self.history.append(text)
         return text
 
 
 class ContextAwareJudge:
-    def __init__(self, thesis_text: str, formatted_references: str, criteria_context: str,
-                 api_key: Optional[str] = None):
-        self.model = Gemini(model="gemini-2.5-flash", api_key=api_key)
+    def __init__(self, thesis_text: str, formatted_references: str, criteria_context: str):
+        self.model = Gemini(model="gemini-2.5-flash", retry_options=retry_config)
 
-        # We explicitly ask for per-round opening/rebuttal scoring and give weights:
-        #   - Opening claim weight = 0.7
-        #   - Rebuttal weight = 0.3
-        # Final round (round 5) counts as a "strengthen" round with weight 0.5 of a normal round.
-        # Tie-break rule: if aggregated weighted totals are within 1 point, prefer PRO unless CON demonstrated
-        # an unfixable logical flaw.
         self.instruction = (
-            f"You are a neutral, rigorous Judge. Do not use recency as a shortcut to decide.\n\n"
+            f"You are a neutral, rigorous Judge helping a user improve their thesis. **Be highly detailed in your feedback**.\n"
             f"Thesis: {thesis_text}\n"
             f"Evaluation Criteria: {criteria_context}\n\n"
             f"Context (references):\n{formatted_references}\n\n"
-            "SCORING PROTOCOL (strict):\n"
-            "- Debate is organized by rounds 1..5. For rounds 1..4 a round contains: OPENING (speaker A) then REBUTTAL (speaker B).\n"
-            "- The Opening claim is the primary piece of evidence (weight 0.7). The Rebuttal is secondary (weight 0.3).\n"
-            "- Round 5 is a Strengthen-only pair: both sides present closing strengthening statements (no rebuttal). "
-            "Round 5 counts as 0.5 of a normal round.\n"
-            "- For each round, assign two integers 1..10:\n"
-            "    * OPENING=<int>  (how convincing the opening claim was for that round)\n"
-            "    * REBUTTAL=<int> (how effective the responder's rebuttal was)\n"
-            "- The Judge MUST evaluate values for every round independently (use only the text from that round for each score).\n"
-            "- Aggregate weighted sums across rounds to decide the winner: sum(opening*0.7 + rebuttal*0.3) for each side.\n"
-            "- Tie-break: if totals are within 1 point, prefer PRO unless CON exposed a clear, unfixable logical flaw.\n\n"
-            "OUTPUT FORMAT (exact, machine-parsable):\n"
-            "RoundScores:\n"
-            "Round 1: OPENING_PRO=<int>, REBUTTAL_PRO=<int>, OPENING_CON=<int>, REBUTTAL_CON=<int>\n"
-            "Round 2: OPENING_PRO=<int>, REBUTTAL_PRO=<int>, OPENING_CON=<int>, REBUTTAL_CON=<int>\n"
-            "Round 3: OPENING_PRO=<int>, REBUTTAL_PRO=<int>, OPENING_CON=<int>, REBUTTAL_CON=<int>\n"
-            "Round 4: OPENING_PRO=<int>, REBUTTAL_PRO=<int>, OPENING_CON=<int>, REBUTTAL_CON=<int>\n"
-            "Round 5: OPENING_PRO=<int>, OPENING_CON=<int>  # final strengthen-only, REBUTTAL fields omitted\n\n"
-            "AGGREGATE: PRO=<float>, CON=<float>\n"
-            "WINNER: PRO or CON\n"
-            "JUSTIFICATION: <2-4 short sentences grounded in scoring and criteria>\n\n"
-            "If CON wins: provide 3 constructive concrete suggestions to improve the thesis so PRO would likely win next time.\n"
+            "SCORING PROTOCOL:\n"
+            "- Debate is organized by rounds 1..5. Assign points (1-10) for every speech based on logic, use of references, and alignment with the user's chosen criteria. Round 5 points should reflect the strength of the final synthesis.\n"
+            "- Calculate the simple sum of scores for PRO and CON.\n\n"
+            "OUTPUT FORMAT (Strict):\n"
+            "SUMMARY:\n"
+            "- PRO Main Arguments: [Summarize top 3 *distinct* points made throughout the debate, each in new line]\n"
+            "- CON Main Concerns: [Summarize top 3 *distinct* concerns made throughout the debate, each in new line]\n\n"
+            "SCORES:\n"
+            "Round 1: PRO=x, CON=y\n"
+            "Round 2: PRO=x, CON=y\n"
+            "Round 3: PRO=x, CON=y\n"
+            "Round 4: PRO=x, CON=y\n"
+            "Round 5: PRO=x, CON=y\n"
+            "TOTAL: PRO=x, CON=y\n\n"
+            "WINNER: [PRO/CON]\n\n"
+            "FEEDBACK FOR USER:\n"
+            "Provide 3 actionable steps to improve the thesis based on the CON arguments that won points. **Elaborate on the weaknesses and provide concrete solutions.**"
         )
 
     def judge(self, transcript: str) -> str:
         model_name = getattr(self.model, "model", "gemini-2.5-flash")
-        prompt = f"{self.instruction}\n\nTRANSCRIPT:\n{transcript}"
+        prompt = f"{self.instruction}\n\nTRANSCRIPT OF DEBATE:\n{transcript}"
         resp = self.model.api_client.models.generate_content(model=model_name, contents=prompt)
         return getattr(resp, "text", str(resp))
 
 
 # -----------------------
-# Main: execute_debate_process (async)
+# Main Process
 # -----------------------
 async def execute_debate_process(
         thesis_text: str,
@@ -205,144 +201,185 @@ async def execute_debate_process(
         runner,
         user_id: str,
         session_id: str,
-        api_key: Optional[str] = None,
         *,
         blocking_mode: str = "to_thread"
 ):
-    """
-    Run: dialog (criteria selection using provided runner & session) -> debate -> judge.
-    The caller awaits this function and receives the final verdict.
-    """
     formatted_refs = format_references_for_context(references_json)
 
-    # -----------------
-    #   Dialog phase
-    # -----------------
-    async def run_criteria_dialog_with_runner() -> str:
-        talk_instruction = f"""
-You are 'DialogAgent'.
-The user is working on this thesis: "{thesis_text}".
+    # --- 1. Dialog Phase (Criteria Selection) ---
+    async def run_criteria_dialog() -> str:
+        initial_msg = (
+            f"User Thesis: '{thesis_text}'\n"
+            f"References Summary: {formatted_refs[:300]}...\n\n"
+            "Task: Ask the user to choose exactly 3 criteria from this list:\n"
+            "1. Scope and Fit\n2. Academic Relevance/Novelty\n3. Research Feasibility\n"
+            "4. Ethical Considerations\n5. Possible Methodology\n6. Professional/Future Relevance\n"
+            "7. Personal Interest/Motivation\n\n"
+            "After they choose 3, ask if they want to add ONE custom criterion.\n"
+            "When finalized, output EXACTLY: 'CRITERIA_FINALIZED: [comma separated list]'"
+        )
 
-Context/References available:
-{formatted_refs}
+        # Start the conversation
+        current_input = initial_msg
 
-Your Goal: Ask the user to choose the 3 most important evaluation criteria from:
-    1. "Scope and Fit"
-    2. "Academic Relevance and Novelty"
-    3. "Research Feasibility"
-    4. "Ethical Considerations"
-    5. "Possible Methodology"
-    6. "Professional and Future Relevance"
-    7. "Personal Interest and Motivation" 
-
-Protocol:
-1. Ask the user to select 3.
-2. Only after user answer, ask if they want to add ONE custom criterion.
-3. When finalized, output ONLY: "CRITERIA_FINALIZED: [The list]"
-"""
-        user_input = talk_instruction
-        final_criteria = ""
-
+        # We need to loop until the agent finalizes
         while True:
-            response_stream = runner.run_async(
-                user_id=user_id,
-                session_id=session_id,
-                new_message=gen_types.Content(role="user", parts=[gen_types.Part.from_text(text=user_input)])
-            )
+            # Send message to agent
+            content = gen_types.Content(role="user", parts=[gen_types.Part.from_text(text=current_input)])
+            response_stream = runner.run_async(user_id=user_id, session_id=session_id, new_message=content)
 
-            agent_response = None
+            agent_text = ""
             async for event in response_stream:
-                content = getattr(event, "content", None)
-                if content and getattr(content, "parts", None):
-                    for part in content.parts:
-                        if getattr(part, "text", None):
-                            agent_response = part.text
+                if event.content and event.content.parts:
+                    for part in event.content.parts:
+                        if part.text:
+                            agent_text += part.text
 
-            if not agent_response:
-                agent_response = "Error: No response from agent."
+            if not agent_text:
+                agent_text = "..."
 
-            print(f"\n🤖 **DialogAgent:** {agent_response}")
+            print(f"🤖 **Agent:** {agent_text}")
 
-            if "CRITERIA_FINALIZED" in agent_response:
-                final_criteria = agent_response.replace("CRITERIA_FINALIZED:", "").strip()
-                break
+            # Check for termination signal
+            if "CRITERIA_FINALIZED:" in agent_text:
+                # Extract the criteria string after the colon
+                extracted_criteria = agent_text.split("CRITERIA_FINALIZED:", 1)[1].strip()
+                return extracted_criteria
 
-            user_input = input("\n👤 **You:** ").strip()
+            user_response = input("👤 **You:** ").strip()
+            current_input = user_response
 
-        return final_criteria
+    print("\n--- 🎯 Criteria Selection Phase ---")
+    criteria = await run_criteria_dialog()
+    print(f"\n✅ Criteria Selected: {criteria}")
 
-    # run dialog and get criteria
-    criteria = await run_criteria_dialog_with_runner()
+    # --- 2. Debate Phase ---
+    con = ContextAwareDebateAgent("Agent CON", "con", thesis_text, formatted_refs, criteria)
+    pro = ContextAwareDebateAgent("Agent PRO", "pro", thesis_text, formatted_refs, criteria)
 
-    # -----------------------
-    # Debate phase
-    # -----------------------
-    # prepare agents
-    con = ContextAwareDebateAgent("Agent CON", "con", thesis_text, formatted_refs, criteria, api_key=api_key)
-    pro = ContextAwareDebateAgent("Agent PRO", "pro", thesis_text, formatted_refs, criteria, api_key=api_key)
+    transcript_lines = [
+        f"THESIS: {thesis_text}",
+        f"CRITERIA: {criteria}"
+    ]
 
-    transcript_lines = []
-    # We'll alternate the opener each round to remove a systematic last-speaker advantage:
-    # Odd rounds: PRO opens, then CON rebuts.
-    # Even rounds: CON opens, then PRO rebuts.
-    # Round 5: both produce a strengthen-only closing statement (no rebuttal); lower weight.
-
-    for round_idx in range(1, 5):
-        print(f"\n--- Round {round_idx} ---")
-        transcript_lines.append(f"--- Round {round_idx} ---")
-
-        if round_idx % 2 == 1:
-            # PRO opens, CON rebuts
-            pro_open = await asyncio.to_thread(pro.argue, None) if blocking_mode == "to_thread" else pro.argue(None)
-            print(f"🔵 PRO (R{round_idx} OPEN): {pro_open}")
-            transcript_lines.append(f"PRO_OPEN: {pro_open}")
-
-            con_reb = await asyncio.to_thread(con.argue, pro_open) if blocking_mode == "to_thread" else con.argue(
-                pro_open)
-            print(f"🔴 CON (R{round_idx} REBUTTAL): {con_reb}")
-            transcript_lines.append(f"CON_REBUT: {con_reb}")
-
+    # Helper to run blocking call
+    async def run_agent(agent_obj, prompt_text):
+        if blocking_mode == "to_thread":
+            return await asyncio.to_thread(agent_obj.argue, prompt_text)
         else:
-            # CON opens, PRO rebuts
-            con_open = await asyncio.to_thread(con.argue, None) if blocking_mode == "to_thread" else con.argue(None)
-            print(f"🔴 CON (R{round_idx} OPEN): {con_open}")
-            transcript_lines.append(f"CON_OPEN: {con_open}")
+            return agent_obj.argue(prompt_text)
 
-            pro_reb = await asyncio.to_thread(pro.argue, con_open) if blocking_mode == "to_thread" else pro.argue(
-                con_open)
-            print(f"🔵 PRO (R{round_idx} REBUTTAL): {pro_reb}")
-            transcript_lines.append(f"PRO_REBUT: {pro_reb}")
+    # Store previous responses for the next round's rebuttal instruction
+    last_con_speech = ""
+    last_pro_speech = ""
 
-        # small pause
-        await asyncio.sleep(0.05)
+    # --- ROUND 1: Opening Statement (Why good/not good) ---
+    print("\n--- Round 1: Opening Statements ---")
+    r1_prompt = "ROUND 1: State clearly why this thesis is good/bad based on the criteria. Do not address opponent yet. **Be highly detailed and elaborate**."
 
-    # Round 5: final strengthen-only for both
-    print("\n--- Round 5 (FINAL: Strengthen-only) ---")
-    transcript_lines.append("--- Round 5 (FINAL) ---")
-    final_instruction = "(FINAL_ROUND: Strengthen your own case. Do NOT rebut the opponent. Add new supporting points, summarize the strongest arguments.)"
+    # PRO Opens
+    print("🔵 PRO (R1) Opening:")
+    pro_r1 = await run_agent(pro, r1_prompt)
+    print(pro_r1)
+    transcript_lines.append(f"ROUND 1 PRO: {pro_r1}")
+    last_pro_speech = pro_r1
 
-    pro_final = await asyncio.to_thread(pro.argue, final_instruction) if blocking_mode == "to_thread" else pro.argue(
-        final_instruction)
-    print(f"🔵 PRO (R5 FINAL): {pro_final}")
-    transcript_lines.append(f"PRO_FINAL: {pro_final}")
+    # CON Responds
+    print("\n🔴 CON (R1) Opening:")
+    con_r1 = await run_agent(con, r1_prompt)
+    print(con_r1)
+    transcript_lines.append(f"ROUND 1 CON: {con_r1}")
+    last_con_speech = con_r1
 
-    con_final = await asyncio.to_thread(con.argue, final_instruction) if blocking_mode == "to_thread" else con.argue(
-        final_instruction)
-    print(f"🔴 CON (R5 FINAL): {con_final}")
-    transcript_lines.append(f"CON_FINAL: {con_final}")
+    # --- ROUND 2: Refute Round 1 ONLY ---
+    print("\n--- Round 2: Refute First Arguments (R1 Only) ---")
 
-    # Build transcript text (explicit markers help the Judge assign per-round scores)
-    transcript = "\n".join(transcript_lines)
+    # PRO Refutes CON's R1
+    print("🔵 PRO (R2) Rebuttal:")
+    # last_con_speech is USED HERE (as the opponent's R1 claim)
+    pro_r2_prompt = f"ROUND 2: **Refute the opponent's R1 claim ONLY.** The opponent's R1 claim was: '{last_con_speech}'"
+    pro_r2 = await run_agent(pro, pro_r2_prompt)
+    print(pro_r2)
+    transcript_lines.append(f"ROUND 2 PRO: {pro_r2}")
+    last_pro_speech = pro_r2
 
-    # -----------------------
-    # Judging (blocking)
-    # -----------------------
-    judge = ContextAwareJudge(thesis_text, formatted_refs, criteria, api_key=api_key)
+    # CON Refutes PRO's R1
+    print("\n🔴 CON (R2) Rebuttal:")
+    # last_pro_speech is USED HERE (as the opponent's R1 claim)
+    con_r2_prompt = f"ROUND 2: **Refute the opponent's R1 claim ONLY.** The opponent's R1 claim was: '{last_pro_speech}'"
+    con_r2 = await run_agent(con, con_r2_prompt)
+    print(con_r2)
+    transcript_lines.append(f"ROUND 2 CON: {con_r2}")
+    last_con_speech = con_r2
+
+    # --- ROUND 3: Refute Round 1 + 2 ---
+    print("\n--- Round 3: Deepening the Argument (Refute R1 & R2) ---")
+
+    # PRO Refutes CON's R2 & strengthens
+    print("🔵 PRO (R3) Rebuttal and Strengthen:")
+    # last_con_speech is USED HERE (as the opponent's R2 claim)
+    pro_r3_prompt = f"ROUND 3: **Refute the opponent's R2 claim, and strengthen your case.** The opponent's R2 claim was: '{last_con_speech}'"
+    pro_r3 = await run_agent(pro, pro_r3_prompt)
+    print(pro_r3)
+    transcript_lines.append(f"ROUND 3 PRO: {pro_r3}")
+    last_pro_speech = pro_r3
+
+    # CON Refutes PRO's R2 & strengthens
+    print("\n🔴 CON (R3) Rebuttal and Strengthen:")
+    # last_pro_speech is USED HERE (as the opponent's R2 claim)
+    con_r3_prompt = f"ROUND 3: **Refute the opponent's R2 claim, and strengthen your case.** The opponent's R2 claim was: '{last_pro_speech}'"
+    con_r3 = await run_agent(con, con_r3_prompt)
+    print(con_r3)
+    transcript_lines.append(f"ROUND 3 CON: {con_r3}")
+    last_con_speech = con_r3
+
+    # --- ROUND 4: Complex Synthesis (Refute R1, R2, R3) ---
+    print("\n--- Round 4: Complex Rebuttal (Refute R1, R2, R3) ---")
+
+    # PRO Refutes CON's R3 & strengthens
+    print("🔵 PRO (R4) Rebuttal and Strengthen:")
+    # last_con_speech is USED HERE (as the opponent's R3 claim)
+    pro_r4_prompt = f"ROUND 4: **Refute the opponent's R3 claim, and strengthen your case.** The opponent's R3 claim was: '{last_con_speech}'"
+    pro_r4 = await run_agent(pro, pro_r4_prompt)
+    print(pro_r4)
+    transcript_lines.append(f"ROUND 4 PRO: {pro_r4}")
+    last_pro_speech = pro_r4
+
+    # CON Refutes PRO's R3 & strengthens
+    print("\n🔴 CON (R4) Rebuttal and Strengthen:")
+    # last_pro_speech is USED HERE (as the opponent's R3 claim)
+    con_r4_prompt = f"ROUND 4: **Refute the opponent's R3 claim, and strengthen your case.** The opponent's R3 claim was: '{last_pro_speech}'"
+    con_r4 = await run_agent(con, con_r4_prompt)
+    print(con_r4)
+    transcript_lines.append(f"ROUND 4 CON: {con_r4}")
+    last_con_speech = con_r4
+
+    # --- ROUND 5: Final Strengthening (No regard for opponent) ---
+    print("\n--- Round 5: Closing Statements (Final Strengthening) ---")
+    r5_prompt = "ROUND 5 (FINAL): Ignore the opponent now. Make your final, strongest case for why you are right based on the criteria. Summarize your best points. **Be highly detailed and elaborate**."
+
+    # PRO Final Statement
+    print("🔵 PRO (R5) Final Statement:")
+    pro_r5 = await run_agent(pro, r5_prompt)
+    print(pro_r5)
+    transcript_lines.append(f"ROUND 5 PRO: {pro_r5}")
+
+    # CON Final Statement
+    print("\n🔴 CON (R5) Final Statement:")
+    con_r5 = await run_agent(con, r5_prompt)
+    print(con_r5)
+    transcript_lines.append(f"ROUND 5 CON: {con_r5}")
+
+    # --- 3. Judging Phase ---
+    print("\n⚖️  Judge is deliberating...")
+    full_transcript = "\n".join(transcript_lines)
+
+    judge = ContextAwareJudge(thesis_text, formatted_refs, criteria)
     if blocking_mode == "to_thread":
-        verdict = await asyncio.to_thread(judge.judge, transcript)
+        verdict = await asyncio.to_thread(judge.judge, full_transcript)
     else:
-        verdict = judge.judge(transcript)
+        verdict = judge.judge(full_transcript)
 
-    print("\n🏆 **VERDICT:**")
+    print("\n🏆 **FINAL VERDICT:**")
     print(verdict)
     return verdict

@@ -1,4 +1,3 @@
-import os
 import logging
 from google.adk.agents import LlmAgent
 from google.adk.models.google_llm import Gemini
@@ -14,6 +13,8 @@ retry_config = types.HttpRetryOptions(
     attempts=5,
     initial_delay=2,
     http_status_codes=[429, 500, 503, 504],
+    max_delay=2,
+    exp_base=1.5
 )
 
 
@@ -38,7 +39,7 @@ def pubmed_execute(query: str) -> str:
     except Exception as e:
         # PubMed client crashed — try scholar fallback
         logger.warning("[pubmed_execute] PubMed call raised exception, falling back to Google Scholar: %s", e)
-        try:
+        try: # sresp = scholar response
             sresp = GoogleScholarTool().execute(query)
             return str(sresp)
         except Exception as e2:
@@ -92,11 +93,11 @@ RULES:
 
 DialogAgent1 = LlmAgent(
     name="DialogAgent1",
-    model=Gemini(model="gemini-2.5-flash", api_key=os.getenv("GEMINI_API_KEY"),
-                 retry_options=retry_config, temperature=0),
+    model=Gemini(model="gemini-2.5-flash", retry_options=retry_config),
     instruction=talk_instruction,
     # Give the agent both tools directly
     tools=[_scholar_fn, _pubmed_fn],
+
 )
 
 
