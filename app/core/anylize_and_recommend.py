@@ -166,6 +166,8 @@ class ContextAwareJudge:
             f"Thesis: {thesis_text}\n"
             f"Evaluation Criteria: {criteria_context}\n\n"
             f"Context (references):\n{formatted_references}\n\n"
+            "if thesis is feasible, even if using the thesis isn't very elaborate on that but in general can be,"
+            "see as if they are part of the thesis with the scoring logic. Thesis is the guideline, judge it accordingly."
             "SCORING PROTOCOL:\n"
             "- Debate is organized by rounds 1..5. Assign points (1-10) for every speech based on logic, use of references, and alignment with the user's chosen criteria. Round 5 points should reflect the strength of the final synthesis.\n"
             "- Calculate the simple sum of scores for PRO and CON.\n\n"
@@ -275,8 +277,12 @@ async def execute_debate_process(
 
     # --- ROUND 1: Opening Statement (Why good/not good) ---
     print("\n--- Round 1: Opening Statements ---")
-    r1_prompt = "ROUND 1: State clearly why this thesis is good/bad based on the criteria. Do not address opponent yet. **Be highly detailed and elaborate**."
-
+    r1_prompt = ("ROUND 1: State clearly why this thesis is good/bad based on the criteria."
+                 "Do not address opponent yet. **Find and cite SPECIFIC, current statistics"
+                 "(e.g., desalination capacity in cubic meters, cost per cubic meter)"
+                 "using the search tool** to support your claim. Be highly detailed and elaborate."
+                 "if it is feasible, if using method that isn't written explicitly in thesis, add them as support."
+                 "")\
     # PRO Opens
     print("🔵 PRO (R1) Opening:")
     pro_r1 = await run_agent(pro, r1_prompt)
