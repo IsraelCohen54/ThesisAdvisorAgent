@@ -1,0 +1,7 @@
+google-adk
+google-genai
+google-cloud-aiplatform==1.126.1
+biopython>=1.79
+requests
+pydantic==2.12.5
+mcp==1.22.0

@@ -1,12 +1,14 @@
 # ThesisAdvisorAgent/app/infrastructure/tools.py
+import logging
 import os
 import requests
-from typing import Any, Dict
+from typing import Any, Dict, List
 from Bio import Entrez, Medline  # pip install biopython
-from app.config.settings import logger, EMAIL
+
+logger = logging.getLogger("ThesisAdvisor")
 
 # Configure Entrez
-Entrez.email = os.getenv("NCBI_CONTACT_EMAIL", EMAIL)
+Entrez.email = os.getenv("NCBI_CONTACT_EMAIL", "hartk111@gmail.com")
 api_key = os.getenv("NCBI_API_KEY")
 if api_key:
     Entrez.api_key = api_key

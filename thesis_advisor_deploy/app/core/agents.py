@@ -1,10 +1,29 @@
 # ThesisAdvisorAgent/app/core/agents.py
+import logging
+import os
 from google.adk.agents import LlmAgent
-from app.config.settings import CORE_MODEL, logger
+from google.adk.models.google_llm import Gemini
 from google.adk.tools.function_tool import FunctionTool
-from app.infrastructure.tools import GoogleScholarTool, PubMedTool
+from google.genai import types
+
+# from app.infrastructure.tools import GoogleScholarTool, PubMedTool
+# => on cloud:
+from ..infrastructure.tools import GoogleScholarTool, PubMedTool
+
+logger = logging.getLogger("ThesisAdvisor")
+
+# Configure Retry
+retry_config = types.HttpRetryOptions(
+    attempts=5,
+    initial_delay=2,
+    http_status_codes=[429, 500, 503, 504],
+    max_delay=2,
+    exp_base=1.5
+)
+
 
 # --- Tool Wrappers ---
+
 def google_scholar_execute(query: str) -> str:
     """Search Google Scholar. Returns a readable string of results."""
     # The Logic handles formatting internally in the tool class or here
@@ -15,6 +34,7 @@ def google_scholar_execute(query: str) -> str:
         return str(resp)
     except Exception as e:
         return f"Error running Google Scholar: {e}"
+
 
 def pubmed_execute(query: str) -> str:
     """Search PubMed. If PubMed returns no results or an error, fall back to Google Scholar."""
@@ -62,30 +82,26 @@ _pubmed_fn = FunctionTool(func=pubmed_execute)
 _pubmed_fn.name = "pubmed_execute"
 _pubmed_fn.description = "Useful ONLY for queries about biology, medicine, clinical trials, diseases, or health."
 
-ACADEMIC_TOOLS = [_scholar_fn, _pubmed_fn]
-
 # --- The Talk Agent (Root) ---
-talk_instruction = """
-You are the Thesis Advisor. Your job is to find academic sources for the user's thesis idea.
+talk_instruction = """You are the Thesis Advisor. Your job is to find academic sources for the user's thesis idea and present them clearly.
 
 RULES:
-1. Analyze the user's thesis.
-2. Call EXACTLY ONE tool:
-   - Call 'pubmed_execute' if the topic is biological/medical.
-   - Call 'google_scholar_execute' for everything else.
-3. OUTPUT: Pass the user's query to the tool.
-4. When the tool returns results, forward them EXACTLY as is. Do not summarize. Do not add intro/outro text. Just output the tool result.
+1. Analyze the user's thesis/query.
+2. Call **EXACTLY ONE** tool to retrieve the sources.
+3. OUTPUT: Pass a focused search query to the tool.
+4. **MANDATORY POST-PROCESSING STEP:** After the tool returns its results (a list of dictionaries), you MUST analyze the results.
+5. **FINAL RESPONSE REQUIREMENT:** Your final output must be a human-readable text part that ONLY contains a formatted summary.
+6. **FORMAT:** Select the **TOP 3 most relevant results** from the tool's output. Present them as a clear, numbered list. For each item, include the **Title, Authors, and the Link/URL**.
+7. **DO NOT** output the raw JSON or dictionary structure. This formatted text is your final response.
 """
 
 DialogAgent1 = LlmAgent(
     name="DialogAgent1",
-    model=CORE_MODEL,
+    model=Gemini(model="gemini-2.5-flash", api_key=os.getenv("GEMINI_API_KEY"), retry_options=retry_config),
     instruction=talk_instruction,
-    tools=ACADEMIC_TOOLS,
+    tools=[_scholar_fn, _pubmed_fn],
 )
+
 
 def get_dialog_agent1():
     return DialogAgent1
-
-# - - - Tools For Debaters - - -
-DEBATE_SEARCH_TOOLS = ACADEMIC_TOOLS

@@ -1,91 +1,161 @@
-# ThesisAdvisorAgent/app/core/anylize_and_recommend.py
+# app/core/anylize_and_recommend.py
+import ast
+import json
 import time
 import asyncio
-import json
-import ast
-from typing import Any
-
-from google.adk.models.google_llm import Gemini
+from typing import Any, List, Callable, Dict, Optional
+from app.config.settings import CORE_MODEL, logger
 from google.genai import types as gen_types
-from google.genai import types
+from app.core.agents import DEBATE_SEARCH_TOOLS
+from google.adk.runners import Runner
 
-# Configure Retry
-retry_config = types.HttpRetryOptions(
-    attempts=5,
-    initial_delay=2,
-    http_status_codes=[429, 500, 503, 504],
-    max_delay=2,
-    exp_base=1.5
-)
-
-
-# -----------------------
-# Helper: format references
-# -----------------------
-def format_references_for_context(references_json_str: Any) -> str:
+# ---------------------------
+# Robust model call helper(s)
+# ---------------------------
+def call_model(model_obj, model_name, contents):
     """
-    Parse the incoming references and return a formatted text block.
+    Try to call generate_content robustly: try with `contents` as-is,
+    but if the SDK expects a string prompt, fall back to str(contents).
+    Returns the model response object or raises the final exception.
     """
     try:
-        if not references_json_str:
-            return "No references provided."
-
-        if isinstance(references_json_str, (list, dict)):
-            articles = references_json_str
-        else:
-            cleaned = str(references_json_str).strip()
-            if cleaned.startswith("{") or cleaned.startswith("["):
-                try:
-                    articles = json.loads(cleaned)
-                except json.JSONDecodeError:
-                    try:
-                        articles = ast.literal_eval(cleaned)
-                    except (ValueError, TypeError): # Using specific exceptions
-                        articles = cleaned  # Fallback
+        return model_obj.api_client.models.generate_content(model=model_name, contents=contents)
+    except TypeError:
+        # Fallback: send joined plain-text prompt if the SDK expects a string
+        try:
+            if isinstance(contents, (list, tuple)):
+                pieces = []
+                for c in contents:
+                    parts = getattr(c, "parts", None) or (c.get("parts") if isinstance(c, dict) else None)
+                    if parts:
+                        for p in parts:
+                            txt = getattr(p, "text", None) or (p.get("text") if isinstance(p, dict) else None)
+                            if txt:
+                                pieces.append(str(txt))
+                fallback_prompt = "\n\n".join(pieces) if pieces else str(contents)
             else:
-                try:
-                    articles = ast.literal_eval(cleaned)
-                except (ValueError, TypeError): # Using specific exceptions
-                    return f"### AVAILABLE REFERENCES / CONTEXT ###\nRaw text:\n{cleaned}\n"
+                fallback_prompt = str(contents)
+            return model_obj.api_client.models.generate_content(model=model_name, contents=fallback_prompt)
+        except Exception:
+            # Reraise the original TypeError if fallback failed to make debugging easier
+            raise
 
-        # Uniform processing
-        if isinstance(articles, dict):
-            if all(isinstance(k, int) for k in articles.keys()):
-                articles = [articles[k] for k in sorted(articles.keys())]
-            else:
-                articles = [articles]
+def safe_get_text(resp) -> str:
+    """
+    Return the most-likely human text from a response object:
+    prefer resp.text, then try candidates -> content -> parts -> text, else str(resp).
+    """
+    txt = getattr(resp, "text", None)
+    if t:
+        return txt
+    candidates = getattr(resp, "candidates", None) or (resp.get("candidates") if isinstance(resp, dict) else None)
+    if candidates:
+        for cand in candidates:
+            content = getattr(cand, "content", None) or (cand.get("content") if isinstance(cand, dict) else None)
+            parts = content.get("parts") if isinstance(content, dict) else getattr(content, "parts", None)
+            if parts:
+                texts = []
+                for p in parts:
+                    texts.append(getattr(p, "text", None) or (p.get("text") if isinstance(p, dict) else None) or str(p))
+                return "\n".join([str(x) for x in texts if x])
+    # last resort
+    return str(resp)
 
-        # If it failed to become a list by now (e.g. just a string), return text
-        if not isinstance(articles, list):
-            return f"### AVAILABLE REFERENCES / CONTEXT ###\nRaw text:\n{str(articles)}\n"
 
-        formatted_text = "### AVAILABLE REFERENCES / CONTEXT ###\n\n"
+# ---------------------------------------------------------------------
+# Utilities: map tool names to callables (from your FunctionTool wrappers)
+# ---------------------------------------------------------------------
+TOOL_MAP: Dict[str, Callable[..., Any]] = {}
+# Removed: AGENT_TOOL_MAP is no longer needed
 
-        for idx, art in enumerate(articles, 1):
-            if not isinstance(art, dict):
-                formatted_text += f"Reference {idx}: {str(art)[:500]}\n\n"
-                continue
+for t in DEBATE_SEARCH_TOOLS:
+    nm = getattr(t, "name", None)
+    # DEBATE_SEARCH_TOOLS only contains FunctionTools
+    if nm and hasattr(t, 'func'):
+        TOOL_MAP[nm] = getattr(t, 'func') # FunctionTool
 
-            title = art.get("title", art.get("name", "Unknown Title"))
-            content = art.get("abstract", art.get("summary", art.get("content", "")))
-            source = art.get("source", art.get("journal", art.get("publisher", "")))
-            authors = art.get("authors", art.get("AU", None))
-            link = art.get("link", art.get("url", "No link"))
 
-            formatted_text += f"Article {idx}: '{title}'\n"
-            if authors:
-                formatted_text += f"   Authors: {authors}\n"
-            if source:
-                formatted_text += f"   Source:  {source}\n"
-            if content:
-                snippet = str(content).replace("\n", " ")[:400]
-                formatted_text += f"   Details: {snippet}...\n"
-            formatted_text += f"   Link:    {link}\n\n"
-
-        return formatted_text
-
+# ---------------------------------------------------------------------
+# Small helper: inspect model resp object for function_call parts robustly
+# ---------------------------------------------------------------------
+def extract_function_call_from_resp(resp: Any) -> Optional[Dict[str, Any]]:
+    """
+    Try multiple likely locations in the response object to find a function_call part.
+    Returns dict: {"name": str, "arguments": dict_or_str} or None if not found.
+    """
+    try:
+        candidates = getattr(resp, "candidates", None)
+        if candidates:
+            for cand in candidates:
+                content = getattr(cand, "content", None) or (cand.get("content") if isinstance(cand, dict) else None)
+                if content:
+                    parts = content.get("parts") if isinstance(content, dict) else getattr(content, "parts", None)
+                    if parts:
+                        for p in parts:
+                            if isinstance(p, dict):
+                                fc = p.get("function_call") or p.get("functionCall") or p.get("tool_call")
+                                if fc:
+                                    return {"name": fc.get("name"), "arguments": fc.get("args") or fc.get("arguments")}
+                            else:
+                                fc = getattr(p, "function_call", None) or getattr(p, "functionCall", None)
+                                if fc:
+                                    name = getattr(fc, "name", None)
+                                    args = getattr(fc, "args", None) or getattr(fc, "arguments", None)
+                                    return {"name": name, "arguments": args}
+        # Fallback: string/repr search (last resort)
+        text_repr = str(resp)
+        if "function_call" in text_repr or '"function_call"' in text_repr:
+            try:
+                start = text_repr.index("{", text_repr.index("function_call"))
+                j = json.loads(text_repr[start:])
+                fc = j.get("function_call") or j.get("functionCall")
+                if fc:
+                    return {"name": fc.get("name"), "arguments": fc.get("args") or fc.get("arguments")}
+            except Exception:
+                pass
+        return None
     except Exception as e:
-        return f"Error formatting references: {e}\nRaw input (truncated): {str(references_json_str)[:400]}"
+        logger.debug("[extract_function_call_from_resp] unexpected parsing error: %s", e)
+        return None
+
+
+# ---------------------------------------------------------------------
+# Host-side "function call" orchestration
+# ---------------------------------------------------------------------
+def run_tool_and_get_result(tool_name: str, raw_args: Any) -> Any:
+    """
+    Execute the FunctionTool identified by tool_name.
+    raw_args may be a dict, a JSON string, or simple text.
+    """
+    fn = TOOL_MAP.get(tool_name)
+    if not fn:
+        # This will now only catch FunctionTools that are missing,
+        # since AgentTool logic was removed.
+        return {"error": f"Tool '{tool_name}' not found on host."}
+
+    args = raw_args
+    if isinstance(raw_args, str):
+        raw = raw_args.strip()
+        try:
+            if raw.startswith("{") or raw.startswith("["):
+                args = json.loads(raw)
+        except Exception:
+            args = raw_args
+
+    try:
+        if isinstance(args, dict):
+            q = args.get("query") or args.get("q") or args.get("text") or args.get("input")
+            if q is not None:
+                return fn(q)
+            try:
+                return fn(**args)
+            except Exception:
+                return fn(str(args))
+        else:
+            return fn(str(args))
+    except Exception as e:
+        logger.exception("[run_tool_and_get_result] tool execution failed for %s: %s", tool_name, e)
+        return {"error": str(e)}
 
 
 # -----------------------
@@ -93,17 +163,18 @@ def format_references_for_context(references_json_str: Any) -> str:
 # -----------------------
 class ContextAwareDebateAgent:
     def __init__(
-            self,
-            name: str,
-            stance: str,
-            thesis_text: str,
-            formatted_references: str,
-            criteria_context: str,
+        self,
+        name: str,
+        stance: str,
+        thesis_text: str,
+        formatted_references: str,
+        criteria_context: str,
+        tools: List[Any],
+        # Removed unused ADK parameters: runner, user_id, session_id
     ):
         self.name = name
         self.stance = stance.upper()  # "PRO" or "CON"
 
-        # Base Persona instruction (general)
         self.base_instruction = (
             f"You are {name}. Stance: {self.stance}. Your goal is to be highly persuasive.\n"
             f"Thesis Topic: {thesis_text}\n"
@@ -112,56 +183,89 @@ class ContextAwareDebateAgent:
             "GENERAL GUIDELINES:\n"
             "1. Be persuasive based on the criteria chosen.\n"
             "2. Use specific details from the provided references to support your point.\n"
-            "3. Maintain professional, concise, and logical consistency. **Be highly detailed and elaborate**."
+            "3. Maintain professional, concise, and logical consistency. **Be highly detailed and elaborate when needed**.\n"
+            "4. **CRITICAL:** You have access to only two **academic search tools: 'google_scholar_execute' and 'pubmed_execute'**. You can use only **ONE** academic tool per round when searching is explicitly permitted.\n"
+            " **Round 1 (Opening):** Use ONLY the references provided above, no search tool use is allowed. If you find any supporting data from reference, say that clearly.\n"
+            " **Rounds 3 and 5 (Strengthening):** You are explicitly permitted to use one academic search tool ('google_scholar_execute' or 'pubmed_execute') to find new research literature to strengthen your case.\n"
+            " **Rounds 2 and 4 (Rebuttal):** Focus on refuting the opponent using existing context; search is discouraged unless absolutely necessary for a counter-claim that requires academic evidence.\n"
+            " Clarification: Somewhat ambiguous in thesis isn't a claim,"
+            " assume user can use method available to humanity and has the capabilities,"
+            " focus on thesis idea and potential, not on the \"not good enough\" wording or not elaborate research method."
         )
 
-        self.model = Gemini(
-            model="gemini-2.5-flash",
-            retry_options=retry_config,
-        )
+        self.model = CORE_MODEL
+        self.tools = tools
 
-        # History will now only store the final response of each turn, NOT the accumulating prompt
-        # We start with a placeholder for the base instruction
-        self.history = [self.base_instruction]
+        # Keep only base + last response to limit context growth
+        self.history: List[str] = [self.base_instruction]
+
+    def _build_call_contents(self, last_response: str, context_prompt: str) -> List[gen_types.Content]:
+        """Build the genai contents list: system (base instruction) + user (last + current)"""
+        history_text = last_response if last_response else "No previous response."
+        user_text = (
+            f"{self.base_instruction}\n\n"
+            f"PREVIOUS (last) RESPONSE:\n{history_text}\n\n"
+            f"CURRENT INSTRUCTION:\n{context_prompt}"
+        )
+        return [
+            gen_types.Content(role="user", parts=[gen_types.Part.from_text(text=user_text)])
+        ]
 
     def argue(self, context_prompt: str) -> str:
         """
-        Generates an argument.
-        'context_prompt' contains the specific instructions for the current round
-        and the opponent's immediate previous point.
+        Generates an argument. This function:
+        - Sends base + last response + current instruction to the model
+        - If the model returns a function_call, the host runs the tool and re-invokes
+          the model including the tool result so the model can incorporate it.
+        - Returns the final model text output.
         """
+        last_response = self.history[1] if len(self.history) > 1 else ""
 
-        # 1. Build the full, current prompt for this specific call
-        # Start with the base instruction to set the scene
-        prompt_parts = [self.base_instruction, "\n\n--- PREVIOUS ROUNDS' RESPONSES ---\n"]
+        contents = self._build_call_contents(last_response, context_prompt)
 
-        # Add the entire debate history (previous responses only, no prompts)
-        # Start from 1 to skip the base instruction, which is already at the start
-        for i, h in enumerate(self.history[1:]):
-            prompt_parts.append(f"Response R{i+1}: {h}")
-
-        # Add the specific instruction for the current round
-        prompt_parts.append(f"\n\n--- CURRENT ROUND INSTRUCTION ---\n{context_prompt}")
-
-        full_prompt = "\n\n".join(prompt_parts)
-
-        # 2. Prepare the content object for the API call
-        content_to_send = [gen_types.Content(role="user", parts=[gen_types.Part.from_text(text=full_prompt)])]
-
-        # 3. Call Gemini (Sync)
         model_name = getattr(self.model, "model", "gemini-2.5-flash")
-        resp = self.model.api_client.models.generate_content(model=model_name, contents=content_to_send)
 
-        text = getattr(resp, "text", str(resp))
+        # 1) initial call
+        resp = call_model(self.model, model_name, contents)
 
-        # 4. Update internal history (store the model's output)
-        self.history.append(text)
-        return text
+        # 2) inspect for function_call
+        fc = extract_function_call_from_resp(resp)
+        if fc:
+            tool_name = fc.get("name")
+            raw_args = fc.get("arguments")
+            logger.info("[argue] model requested tool '%s' with args: %s", tool_name, raw_args)
+
+            # run the tool on host
+            tool_result = run_tool_and_get_result(tool_name, raw_args)
+
+            # Format tool result as a deterministic text block to send back to model
+            try:
+                tool_result_text = json.dumps(tool_result) if not isinstance(tool_result, str) else str(tool_result)
+            except Exception:
+                tool_result_text = str(tool_result)
+
+            # 3) Re-call the model including the tool result as additional user info
+            tool_feedback = f"[TOOL_RESPONSE: {tool_name}]\n{tool_result_text}\n[/TOOL_RESPONSE]\nNow, using the above tool output, produce your argument for this round."
+
+            # Combine current instruction and tool feedback into one prompt for the agent
+            updated_context_prompt = f"{context_prompt}\n\n{tool_feedback}"
+
+            # **REUSE the corrected builder, passing the new prompt**
+            new_contents = self._build_call_contents(last_response, updated_context_prompt)
+
+            resp2 = call_model(self.model, model_name, new_contents)
+            final_text = safe_get_text(resp2)
+        else:
+            final_text = safe_get_text(resp)
+
+        # Save only the last output to keep history small for the next round
+        self.history = [self.base_instruction, final_text]
+        return final_text
 
 
 class ContextAwareJudge:
     def __init__(self, thesis_text: str, formatted_references: str, criteria_context: str):
-        self.model = Gemini(model="gemini-2.5-flash", retry_options=retry_config)
+        self.model = CORE_MODEL
 
         self.instruction = (
             f"You are a neutral, rigorous Judge helping a user improve their thesis. **Be highly detailed in your feedback**.\n"
@@ -199,45 +303,48 @@ class ContextAwareJudge:
         )
 
     def judge(self, transcript: str) -> str:
+        """
+        Judge should receive the full transcript for final evaluation.
+        """
         model_name = getattr(self.model, "model", "gemini-2.5-flash")
         prompt = f"{self.instruction}\n\nTRANSCRIPT OF DEBATE:\n{transcript}"
 
-        # Use a maximum of 3 retries
         max_retries = 3
         for attempt in range(max_retries):
-            resp = self.model.api_client.models.generate_content(
-                model=model_name, contents=prompt
-            )
+            resp = call_model(self.model, model_name, prompt)
             if resp is not None:
-                return getattr(resp, "text", str(resp))
+                return safe_get_text(resp)
 
-            # Log the retry (optional but highly recommended)
             print(f"API call failed (returned None), retrying in 2 seconds (Attempt {attempt + 1}/{max_retries})...")
             time.sleep(2)
 
-        # If all attempts fail, raise a clear exception
         raise RuntimeError(f"Failed to get a non-None response from the model after {max_retries} attempts.")
 
 
 # -----------------------
-# Main Process
+# Main Process: execute_debate_process
 # -----------------------
 async def execute_debate_process(
-        thesis_text: str,
-        references_json: Any,
-        runner,
-        user_id: str,
-        session_id: str,
-        *,
-        blocking_mode: str = "to_thread"
+    thesis_text: str,
+    references_json: Any,
+    runner: Runner, # Explicitly typed Runner now
+    user_id: str,
+    session_id: str,
+    *,
+    blocking_mode: str = "to_thread"
 ):
-    formatted_refs = format_references_for_context(references_json)
+    """
+    Orchestrates:
+    1) Criteria dialog (via runner)
+    2) 5-round debate between two ContextAwareDebateAgent instances
+    3) Final judgment using ContextAwareJudge (gets whole transcript)
+    """
 
     # --- 1. Dialog Phase (Criteria Selection) ---
     async def run_criteria_dialog() -> str:
         initial_msg = (
             f"User Thesis: '{thesis_text}'\n"
-            f"References Summary: {formatted_refs[:300]}...\n\n"
+            f"References Summary: {references_json}...\n\n"
             "Task: Ask the user to choose exactly 3 criteria from this list:\n"
             "1. Scope and Fit\n2. Academic Relevance/Novelty\n3. Research Feasibility\n"
             "4. Ethical Considerations\n5. Possible Methodology\n6. Professional/Future Relevance\n"
@@ -246,12 +353,9 @@ async def execute_debate_process(
             "When finalized, output EXACTLY: 'CRITERIA_FINALIZED: [comma separated list]'"
         )
 
-        # Start the conversation
         current_input = initial_msg
 
-        # We need to loop until the agent finalizes
         while True:
-            # Send message to agent
             content = gen_types.Content(role="user", parts=[gen_types.Part.from_text(text=current_input)])
             response_stream = runner.run_async(user_id=user_id, session_id=session_id, new_message=content)
 
@@ -259,7 +363,7 @@ async def execute_debate_process(
             async for event in response_stream:
                 if event.content and event.content.parts:
                     for part in event.content.parts:
-                        if part.text:
+                        if getattr(part, "text", None):
                             agent_text += part.text
 
             if not agent_text:
@@ -267,9 +371,7 @@ async def execute_debate_process(
 
             print(f"🤖 **Agent:** {agent_text}")
 
-            # Check for termination signal
             if "CRITERIA_FINALIZED:" in agent_text:
-                # Extract the criteria string after the colon
                 extracted_criteria = agent_text.split("CRITERIA_FINALIZED:", 1)[1].strip()
                 return extracted_criteria
 
@@ -281,121 +383,100 @@ async def execute_debate_process(
     print(f"\n✅ Criteria Selected: {criteria}")
 
     # --- 2. Debate Phase ---
-    con = ContextAwareDebateAgent("Agent CON", "con", thesis_text, formatted_refs, criteria)
-    pro = ContextAwareDebateAgent("Agent PRO", "pro", thesis_text, formatted_refs, criteria)
+    # Agent initialization uses the cleaned signature
+    con = ContextAwareDebateAgent("Agent CON", "con", thesis_text, references_json, criteria, tools=DEBATE_SEARCH_TOOLS)
+    pro = ContextAwareDebateAgent("Agent PRO", "pro", thesis_text, references_json, criteria, tools=DEBATE_SEARCH_TOOLS)
 
     transcript_lines = [
         f"THESIS: {thesis_text}",
         f"CRITERIA: {criteria}"
     ]
 
-    # Helper to run blocking call
     async def run_agent(agent_obj, prompt_text):
         if blocking_mode == "to_thread":
             return await asyncio.to_thread(agent_obj.argue, prompt_text)
         else:
             return agent_obj.argue(prompt_text)
 
-    # Store previous responses for the next round's rebuttal instruction
     last_con_speech = ""
     last_pro_speech = ""
 
-    # --- ROUND 1: Opening Statement (Why good/not good) ---
+    # ROUND 1
     print("\n--- Round 1: Opening Statements ---")
     r1_prompt = ("ROUND 1: State clearly why this thesis is good/bad based on the criteria."
-                 "Do not address opponent yet. **Find and cite SPECIFIC, current statistics"
-                 "(e.g., desalination capacity in cubic meters, cost per cubic meter)"
-                 "using the search tool** to support your claim. Be highly detailed and elaborate."
-                 "if it is feasible, if using method that isn't written explicitly in thesis, add them as support."
-                 "")\
-    # PRO Opens
+             "Do not address opponent yet. **You MUST ONLY use the references provided in your context.**"
+             "Cite at least one of the provided articles (e.g., 'According to Article \"title\", ...'), "
+                 "It should be readable, not in json format."
+             "Tool use is strictly forbidden in this round.")
     print("🔵 PRO (R1) Opening:")
     pro_r1 = await run_agent(pro, r1_prompt)
     print(pro_r1)
     transcript_lines.append(f"ROUND 1 PRO: {pro_r1}")
     last_pro_speech = pro_r1
 
-    # CON Responds
     print("\n🔴 CON (R1) Opening:")
     con_r1 = await run_agent(con, r1_prompt)
     print(con_r1)
     transcript_lines.append(f"ROUND 1 CON: {con_r1}")
     last_con_speech = con_r1
 
-    # --- ROUND 2: Refute Round 1 ONLY ---
+    # ROUND 2
     print("\n--- Round 2: Refute First Arguments (R1 Only) ---")
-
-    # PRO Refutes CON's R1
     print("🔵 PRO (R2) Rebuttal:")
-    # last_con_speech is USED HERE (as the opponent's R1 claim)
     pro_r2_prompt = f"ROUND 2: **Refute the opponent's R1 claim ONLY.** The opponent's R1 claim was: '{last_con_speech}'"
     pro_r2 = await run_agent(pro, pro_r2_prompt)
     print(pro_r2)
     transcript_lines.append(f"ROUND 2 PRO: {pro_r2}")
     last_pro_speech = pro_r2
 
-    # CON Refutes PRO's R1
     print("\n🔴 CON (R2) Rebuttal:")
-    # last_pro_speech is USED HERE (as the opponent's R1 claim)
     con_r2_prompt = f"ROUND 2: **Refute the opponent's R1 claim ONLY.** The opponent's R1 claim was: '{last_pro_speech}'"
     con_r2 = await run_agent(con, con_r2_prompt)
     print(con_r2)
     transcript_lines.append(f"ROUND 2 CON: {con_r2}")
     last_con_speech = con_r2
 
-    # --- ROUND 3: Refute Round 1 + 2 ---
+    # ROUND 3
     print("\n--- Round 3: Deepening the Argument (Refute R1 & R2) ---")
-
-    # PRO Refutes CON's R2 & strengthens
     print("🔵 PRO (R3) Rebuttal and Strengthen:")
-    # last_con_speech is USED HERE (as the opponent's R2 claim)
-    pro_r3_prompt = f"ROUND 3: **Refute the opponent's R2 claim, and strengthen your case.** The opponent's R2 claim was: '{last_con_speech}'"
+    pro_r3_prompt = f"ROUND 3: **Refute the opponent's R2 claim, and strengthen your case.** You can search for **new research literature** using the academic tool to support your case. The opponent's R2 claim was: '{last_con_speech}'"
     pro_r3 = await run_agent(pro, pro_r3_prompt)
     print(pro_r3)
     transcript_lines.append(f"ROUND 3 PRO: {pro_r3}")
     last_pro_speech = pro_r3
 
-    # CON Refutes PRO's R2 & strengthens
     print("\n🔴 CON (R3) Rebuttal and Strengthen:")
-    # last_pro_speech is USED HERE (as the opponent's R2 claim)
-    con_r3_prompt = f"ROUND 3: **Refute the opponent's R2 claim, and strengthen your case.** The opponent's R2 claim was: '{last_pro_speech}'"
+    con_r3_prompt = f"ROUND 3: **Refute the opponent's R2 claim, and strengthen your case.** You can search for **new research literature** using the academic tool to support your case. The opponent's R2 claim was: '{last_pro_speech}'"
     con_r3 = await run_agent(con, con_r3_prompt)
     print(con_r3)
     transcript_lines.append(f"ROUND 3 CON: {con_r3}")
     last_con_speech = con_r3
 
-    # --- ROUND 4: Complex Synthesis (Refute R1, R2, R3) ---
+    # ROUND 4
     print("\n--- Round 4: Complex Rebuttal (Refute R1, R2, R3) ---")
-
-    # PRO Refutes CON's R3 & strengthens
     print("🔵 PRO (R4) Rebuttal and Strengthen:")
-    # last_con_speech is USED HERE (as the opponent's R3 claim)
     pro_r4_prompt = f"ROUND 4: **Refute the opponent's R3 claim, and strengthen your case.** The opponent's R3 claim was: '{last_con_speech}'"
     pro_r4 = await run_agent(pro, pro_r4_prompt)
     print(pro_r4)
     transcript_lines.append(f"ROUND 4 PRO: {pro_r4}")
     last_pro_speech = pro_r4
 
-    # CON Refutes PRO's R3 & strengthens
     print("\n🔴 CON (R4) Rebuttal and Strengthen:")
-    # last_pro_speech is USED HERE (as the opponent's R3 claim)
     con_r4_prompt = f"ROUND 4: **Refute the opponent's R3 claim, and strengthen your case.** The opponent's R3 claim was: '{last_pro_speech}'"
     con_r4 = await run_agent(con, con_r4_prompt)
     print(con_r4)
     transcript_lines.append(f"ROUND 4 CON: {con_r4}")
     last_con_speech = con_r4
 
-    # --- ROUND 5: Final Strengthening (No regard for opponent) ---
+    # ROUND 5
     print("\n--- Round 5: Closing Statements (Final Strengthening) ---")
-    r5_prompt = "ROUND 5 (FINAL): Ignore the opponent now. Make your final, strongest case for why you are right based on the criteria. Summarize your best points. **Be highly detailed and elaborate**."
-
-    # PRO Final Statement
+    # Updated prompt to focus on academic/summary, removing mention of web/statistics
+    r5_prompt = "ROUND 5 (FINAL): Ignore the opponent now. Make your final, strongest case for why you are right based on the criteria. You can search for final supporting academic evidence (scholar or pubmed) if needed. Summarize your best points. **Be highly detailed and elaborate**."
     print("🔵 PRO (R5) Final Statement:")
     pro_r5 = await run_agent(pro, r5_prompt)
     print(pro_r5)
     transcript_lines.append(f"ROUND 5 PRO: {pro_r5}")
 
-    # CON Final Statement
     print("\n🔴 CON (R5) Final Statement:")
     con_r5 = await run_agent(con, r5_prompt)
     print(con_r5)
@@ -405,7 +486,7 @@ async def execute_debate_process(
     print("\n⚖️  Judge is deliberating...")
     full_transcript = "\n".join(transcript_lines)
 
-    judge = ContextAwareJudge(thesis_text, formatted_refs, criteria)
+    judge = ContextAwareJudge(thesis_text, references_json, criteria)
     if blocking_mode == "to_thread":
         verdict = await asyncio.to_thread(judge.judge, full_transcript)
     else:

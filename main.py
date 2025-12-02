@@ -1,26 +1,25 @@
+# main.py
+import ast
 import uuid
 import json
-import asyncio
 import logging
-import ast  # <--- NEW: Needed to parse the python dictionary string safely
+import asyncio
 from typing import Any
-
 from google.adk.apps.app import App
 from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+from app.config.settings import logger
 from google.genai import types as gen_types
-
 from app.core.agents import get_dialog_agent1
-
+from google.adk.sessions import InMemorySessionService
 from app.core.anylize_and_recommend import execute_debate_process
 
 # --- Logging Setup ---
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(message)s')
-logger = logging.getLogger("ThesisAdvisor")
 logger.setLevel(logging.INFO)
 
-
-# --- Helper: The "Pretty Printer" ---
+# -----------------------
+# Helper: The "Pretty Printer"
+# -----------------------
 def format_results_for_display(response_obj: Any) -> str:
     """
     Parses raw tool output (JSON, Dict string, or List) and returns a beautiful
@@ -38,10 +37,10 @@ def format_results_for_display(response_obj: Any) -> str:
                 response_obj = json.loads(cleaned)
         except json.JSONDecodeError:
             try:
-                # Case B: Python Dict String (Single quotes - typical from your tools.py)
+                # Case B: Python Dict String (Single quotes - from tools.py)
                 response_obj = ast.literal_eval(cleaned)
             except (ValueError, SyntaxError):
-                pass  # It's just normal text, keep it as string
+                pass  # It's just normal text, kept as string
 
     # 2. EXTRACTION: Get the list from inside the dict
     if isinstance(response_obj, dict):
@@ -90,15 +89,36 @@ def format_results_for_display(response_obj: Any) -> str:
     # 4. FALLBACK: Just return the string
     return str(response_obj)
 
-from google.genai import types
-# Configure Retry
-retry_config = types.HttpRetryOptions(
-    attempts=5,
-    initial_delay=2,
-    http_status_codes=[429, 500, 503, 504],
-    max_delay=2,
-    exp_base=1.5
-)
+
+# -----------------------
+# Helper: parse tool output to structured object (list/dict) when possible
+# -----------------------
+def parse_tool_output_to_struct(obj):
+    """
+    Try to return a structured Python object (list/dict) from the tool output.
+    If parsing fails, return the original object (string) so the pipeline still works.
+    """
+    if obj is None:
+        return None
+
+    if isinstance(obj, (list, dict)):
+        return obj
+
+    s = str(obj).strip()
+    # Try JSON first (preferred)
+    if s.startswith("{") or s.startswith("["):
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError:
+            pass
+
+    # Try Python literal (single-quotes / other)
+    try:
+        return ast.literal_eval(s)
+    except Exception:
+        # not parseable -> return original string
+        return s
+
 
 # --- Main Async Logic ---
 async def main():
@@ -116,6 +136,8 @@ async def main():
     await runner.session_service.create_session(app_name="agents", user_id=user_id, session_id=session_id)
 
     thesis_input = input("\n📝 Enter your thesis/idea: ").strip()
+    while thesis_input.__len__() < 5: # defending against a miss click \ enter
+        thesis_input = input("\n📝 Enter your thesis/idea: ").strip()
 
     while True:
         if not thesis_input:
@@ -133,13 +155,13 @@ async def main():
                 if event.content and event.content.parts:
                     for part in event.content.parts:
                         # 1. Priority: Check for structured function response
-                        if part.function_response:
+                        if getattr(part, "function_response", None):
                             # Try to get 'result' directly if the tool returns a dict
                             resp = part.function_response.response
                             tool_output = resp.get("result") if isinstance(resp, dict) else resp
 
                         # 2. Capture text (in case agent talks)
-                        if part.text:
+                        if getattr(part, "text", None):
                             full_text.append(part.text)
         except Exception as e:
             print(f"❌ Error during search: {e}")
@@ -164,10 +186,18 @@ async def main():
             print("If you would have another thesis idea, you are invited to try again!")
             break
         elif choice == 'c':
-            references = str(tool_output) if tool_output else "\n".join(full_text)
+            if tool_output:
+                references_obj = parse_tool_output_to_struct(tool_output)
+            else:
+                # if no structured tool output, prefer the full agent text (string)
+                references_obj = "\n".join(full_text) if full_text else None
+
+
+            # The debate process requires runner/user_id/session_id for the
+            # Criteria Selection Dialog phase (which is asynchronous).
             await execute_debate_process(
                 thesis_text=thesis_input,
-                references_json=references,
+                references_json=references_obj,
                 runner=runner,
                 user_id=user_id,
                 session_id=session_id,
@@ -176,6 +206,8 @@ async def main():
             break
         elif choice == 'r':
             thesis_input = input("Enter refined thesis idea: ").strip()
+            while thesis_input.__len__() < 5:  # defending against a miss click \ enter
+                thesis_input = input("\n📝 Enter your thesis/idea: ").strip()
             continue
         else:
             thesis_input = input("Assuming you wanted to try again. \nPlease enter refined query: ").strip()

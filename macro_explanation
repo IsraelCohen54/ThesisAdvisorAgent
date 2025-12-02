@@ -1,12 +1,14 @@
 ThesisAdvisor/
 ├── app/
+│   ├── config/
+│   │    └── settings.py
 │   ├── core/           # Entities & Business Logic (The Brain)
-│   │    ---> Agents.py                ( - search and talk with user)
-│   │    ---> anylize_and_recommend.py ( - Debaters agents)
+│   │    ├── Agents.py                ( - search and talk with user)
+│   │    └── anylize_and_recommend.py ( - Debaters agents)
 │   └── infrastructure/ # External Tools (Google Scholar, Pubmed)
-│        ---> tools.py
+│        └── tools.py
 ├── evaluations/        # Agents research evaluations
-         ---> researcher_finding_relevant_articles.py
+    └── researcher_finding_relevant_articles.py
 ├── .env                # API Keys (Never commit this to Git!)
 ├── requirements.txt    # Dependency list
 ├── test_agile_steps/   # Agile Steps Verification Scripts

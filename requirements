@@ -1,14 +1,14 @@
 # --- ADK & Vertex AI (Keep these modern) ---
 google-adk
 google-genai
-vertexai  # <-- REMOVE VERSION PIN IF ANY
+vertexai
 google-cloud-aiplatform[agent-engines]  # <-- Let pip find the latest compatible version
 google-cloud-storage # <-- Let pip find the latest compatible version
 
 # --- Optional Instrumentation ---
 opentelemetry-instrumentation-google-genai
 
-# --- Your other libs (Pin these as needed) ---
+# --- Other libs ---
 biopython>=1.79
 requests
 pydantic==2.12.5
