@@ -7,7 +7,7 @@ import asyncio
 from typing import Any
 from google.adk.apps.app import App
 from google.adk.runners import Runner
-from app.config.settings import logger, THESIS_MINIMUM_LENGHT
+from app.config.settings import logger
 from google.genai import types as gen_types
 from app.core.agents import get_dialog_agent1
 from google.adk.sessions import InMemorySessionService
@@ -136,8 +136,8 @@ async def main():
     await runner.session_service.create_session(app_name="agents", user_id=user_id, session_id=session_id)
 
     thesis_input = input("\n📝 Enter your thesis/idea: ").strip()
-    while thesis_input.__len__() < THESIS_MINIMUM_LENGHT: # defending against a miss click \ enter
-        thesis_input = input("\n📝 Enter your thesis/idea (at least 10 characters): ").strip()
+    while thesis_input.__len__() < 5: # defending against a miss click \ enter
+        thesis_input = input("\n📝 Enter your thesis/idea: ").strip()
 
     while True:
         if not thesis_input:

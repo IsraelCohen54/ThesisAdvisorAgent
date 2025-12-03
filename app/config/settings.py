@@ -1,8 +1,6 @@
 # app/config/settings.py
 
 import logging
-import uuid
-
 from google.genai import types
 from google.adk.models.google_llm import Gemini
 
@@ -28,15 +26,8 @@ CORE_MODEL = Gemini(model="gemini-2.5-flash", retry_options=RETRY_CONFIG)
 
 # 4. --- Vertex AI Deployment Constants ---
 REGION = "us-central1"
-PROJECT_ID = "flowing-precept-479317-j4"
-AGENT_RESOURCE_ID = f"projects/682003720850/locations/{REGION}/reasoningEngines/5242590188491767808"
+PROJECT_ID =
+AGENT_RESOURCE_ID =
 
 # 5. For PubMed Search tool - "Entrez" configuration
 EMAIL = "hartk111@gmail.com"
-
-# 6. Minimum length for thesis input:
-THESIS_MINIMUM_LENGHT = 10
-
-# Probably on real deploy you would have to change it
-USER_ID = "user_1"
-SESSION_ID = f"session_{uuid.uuid4().hex[:6]}"

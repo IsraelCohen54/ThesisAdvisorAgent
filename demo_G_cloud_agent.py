@@ -1,24 +1,32 @@
-# demo_G_cloud_agent.py
-import os
+# thesis_advisor_client.py
+import vertexai
 import uuid
+import json
 import asyncio
 import logging
-import vertexai
-from typing import Any, List, Optional, Dict
+import ast
+from typing import Any, Dict, List, Optional
+import os
+import sys
+import re
 
-# ADK Components
+# Import ADK Components
 from google.adk.apps.app import App
 from google.adk.runners import Runner
-from google.genai import types as gen_types
 from google.adk.sessions import InMemorySessionService
+from google.genai import types as gen_types
 
-# local components
+# Import local components
 from app.core.agents import get_dialog_agent1
 from app.core.anylize_and_recommend import execute_debate_process
-from app.config.settings import logger, PROJECT_ID, REGION, THESIS_MINIMUM_LENGHT, USER_ID, SESSION_ID
-from app.function_helpers.cloud_helpers import normalize_tool_output, pretty_display, run_tool_and_get_result
+
+from app.config.settings import logger, PROJECT_ID, REGION
 
 # --- Environment Setup (Must be before ADK imports) ---
+if sys.platform == "win32" and sys.stdin.isatty():
+    sys.stdin.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding='utf-8')
+
 os.environ.setdefault("GOOGLE_CLOUD_PROJECT", PROJECT_ID)
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", REGION)
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "1")
@@ -29,6 +37,190 @@ logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(message)s')
 logger.setLevel(logging.INFO)
 
 
+# -----------------------
+# Parsing & Pretty helpers
+# -----------------------
+def safe_parse_string(s: Any) -> Any:
+    """
+    Try to turn `s` (string/bytes) into Python object:
+    1) json.loads
+    2) ast.literal_eval
+    3) find first {...} or [...] substring and attempt parsing again
+    If all fail, return cleaned string.
+    """
+    if s is None:
+        return None
+
+    # already structured
+    if isinstance(s, (dict, list)):
+        return s
+
+    # normalize bytes
+    if isinstance(s, (bytes, bytearray)):
+        try:
+            s = s.decode("utf-8")
+        except Exception:
+            s = str(s)
+
+    if not isinstance(s, str):
+        return s
+
+    s_strip = s.strip()
+    if not s_strip:
+        return s_strip
+
+    # try JSON first
+    try:
+        return json.loads(s_strip)
+    except Exception:
+        pass
+
+    # try python-literal (single quotes)
+    try:
+        return ast.literal_eval(s_strip)
+    except Exception:
+        pass
+
+    # try to locate first balanced {...} or [...] block and parse that
+    # This helps if I get outer quoting like: "{'result': [...]}"
+
+    # regex to find first { ... } or [ ... ] pair (greedy-ish but ok for our outputs)
+    match = re.search(r'(\{.*\}|\[.*\])', s_strip, flags=re.DOTALL)
+    if match:
+        candidate = match.group(0)
+        # try json then literal eval
+        try:
+            return json.loads(candidate)
+        except Exception:
+            try:
+                return ast.literal_eval(candidate)
+            except Exception:
+                pass
+
+    # nothing parsed — return original trimmed string
+    return s_strip
+
+
+def normalize_tool_output(obj: Any) -> Any:
+    """
+    Repeatedly unwrap nested wrappers until we get a native list/dict or stable primitive.
+    Handles shapes like:
+      {'pubmed_execute_response': {'result': "{'result': [...] }"}}
+      {'result': "{'result': [...]}"}
+      '{"result": "[{...}]"}'
+    """
+    current = obj
+    MAX_ITER = 6
+    for _ in range(MAX_ITER):
+        # unwrap single-key "*_response" wrappers
+        if isinstance(current, dict) and len(current) == 1:
+            k = next(iter(current))
+            if isinstance(k, str) and k.endswith("_response"):
+                current = current[k]
+                continue
+
+        # if dict with 'result' or 'organic_results' -> take it
+        if isinstance(current, dict) and "result" in current:
+            current = current["result"]
+            continue
+        if isinstance(current, dict) and "organic_results" in current:
+            current = current["organic_results"]
+            continue
+
+        # if a string-like object -> try parsing it
+        if isinstance(current, (str, bytes, bytearray)):
+            parsed = safe_parse_string(current)
+            # if parsed turned into something new, continue loop
+            if parsed is not None and parsed != current:
+                current = parsed
+                continue
+            # couldn't parse further
+            break
+
+        # if list -> normalize elements (but don't try to flatten)
+        if isinstance(current, list):
+            # ensure each element is normalized once (parse string elements if needed)
+            new_list = []
+            for el in current:
+                if isinstance(el, (str, bytes, bytearray)):
+                    maybe = safe_parse_string(el)
+                    new_list.append(maybe if maybe is not None else el)
+                else:
+                    new_list.append(el)
+            return new_list
+
+        # if dict (but not parsed 'result' case), attempt to normalize its values
+        if isinstance(current, dict):
+            # normalize values but return dict
+            return {k: normalize_tool_output(v) for k, v in current.items()}
+
+        # else primitive -> return
+        break
+
+    return current
+
+
+def pretty_display(obj: Any, max_snippet: Optional[int] = None) -> str:
+    """
+    Return a human-friendly multiline string for obj (list/dict/str).
+     - If list of dicts -> numbered Title/Authors/Source/Link/Snippet blocks.
+     - If dict -> pretty JSON (indent=2)
+     - else -> str(obj)
+    """
+    norm = normalize_tool_output(obj)
+
+    # If list -> format as numbered list
+    if isinstance(norm, list):
+        if not norm:
+            return "No relevant results found."
+
+        lines = []
+        for idx, item in enumerate(norm, start=1):
+            # if item is string, try parse once more
+            if isinstance(item, str):
+                maybe = safe_parse_string(item)
+                if isinstance(maybe, (list, dict)):
+                    item = maybe
+
+            if isinstance(item, dict):
+                title = item.get("title") or item.get("name") or "No Title"
+                authors = item.get("authors") or item.get("author") or item.get("AU") or ""
+                source = item.get("source") or item.get("journal") or item.get("publisher") or ""
+                link = item.get("link") or item.get("url") or item.get("pmid") or ""
+                snippet = item.get("snippet") or item.get("abstract") or item.get("summary") or ""
+
+                clean_snip = " ".join(str(snippet).split())
+                if max_snippet and len(clean_snip) > max_snippet:
+                    clean_snip = clean_snip[:max_snippet].rstrip()
+
+                lines.append(f"{idx}. {title}")
+                if authors:
+                    lines.append(f"   Authors: {authors}")
+                if source:
+                    lines.append(f"   Source:  {source}")
+                if link:
+                    lines.append(f"   Link:    {link}")
+                if clean_snip:
+                    lines.append(f"   Snippet: {clean_snip}")
+                lines.append("")  # blank line between items
+            else:
+                lines.append(f"{idx}. {str(item)}")
+                lines.append("")
+
+        # remove trailing blank line
+        if lines and lines[-1] == "":
+            lines = lines[:-1]
+        return "\n".join(lines)
+
+    # If dict -> pretty JSON
+    if isinstance(norm, dict):
+        try:
+            return json.dumps(norm, indent=2, ensure_ascii=False)
+        except Exception:
+            return str(norm)
+
+    # fallback -> string
+    return str(norm)
 
 
 # --- Main Async Logic ---
@@ -40,11 +232,13 @@ async def main():
     app = App(name="agents", root_agent=dialog_agent1)
     runner = Runner(app=app, session_service=InMemorySessionService())
 
-    await runner.session_service.create_session(app_name="agents", user_id=USER_ID, session_id=SESSION_ID)
+    user_id = "user_1"
+    session_id = f"session_{uuid.uuid4().hex[:6]}"
+    await runner.session_service.create_session(app_name="agents", user_id=user_id, session_id=session_id)
 
     thesis_input = input("\n📝 Enter your thesis/idea: ").strip()
-    while len(thesis_input) < THESIS_MINIMUM_LENGHT:  # defending against a miss click \ enter
-        thesis_input = input("\n📝 Enter your thesis/idea (at least 10 characters): ").strip()
+    while len(thesis_input) < 5:  # defending against a miss click \ enter
+        thesis_input = input("\n📝 Enter your thesis/idea: ").strip()
 
     while True:
         print(f"\n🔎 Searching for: {thesis_input}...")
@@ -57,50 +251,31 @@ async def main():
 
         try:
             # Call the DEPLOYED Agent using the local Runner
-            async for event in runner.run_async(user_id=USER_ID, session_id=SESSION_ID, new_message=content):
+            async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=content):
                 if event.content and event.content.parts:
                     for part in event.content.parts:
-                        # 0. Detect Tool Request (function_call) -> Execute Tool Locally
-                        fc = getattr(part, "function_call", None)
-                        if fc:
-                            name = getattr(fc, "name", None)
+                        # 1. Capture RAW TOOL DATA (for debate bridge)
+                        if getattr(part, "function_response", None):
+                            resp = part.function_response.response
 
-                            # We also check for 'args' as some SDK versions use different names
-                            args = getattr(fc, "arguments", None) or getattr(fc, "args", {})
+                            # Normalize & unwrap nested string/dict wrappers robustly
+                            parsed = normalize_tool_output(resp)
+                            parsed = normalize_tool_output(parsed)  # second pass in case of nested 'result' string
 
-                            # We perform one final check to ensure it's a dictionary before passing it
-                            if not isinstance(args, dict):
-                                args = {}
+                            raw_tool_output = parsed
+                            print("\n[Function call trace completed]")  # Trace debug
 
-                            print(f"Model requested tool: {name} args: {args}")
-
-                            # 1. Execute the tool locally (you need to define or import this function)
-                            tool_result = run_tool_and_get_result(name, args)
-
-                            # 2. IMMEDIATELY NORMALIZE the result to clean list/dict structure
-                            raw_tool_output = normalize_tool_output(tool_result)
-
-                            print("\n[Function call trace completed]")  # Trace debug, this is what you are seeing
+                            # IMPORTANT: Do NOT print part.text when there was a function_response --
+                            # that text is usually a stringified tool result (one-line) and we will
+                            # pretty-print the parsed `raw_tool_output` after the stream finishes.
                             continue
 
+                        # 2. Capture FINAL FORMATTED TEXT (for user display) ONLY when no function_response.
                         if getattr(part, "text", None):
-                            text_content = part.text
-
-                            # --- CRITICAL NEW LOGIC: Intercept raw structured text ---
-                            maybe_parsed = normalize_tool_output(text_content)
-
-                            # If parsing the text results in a list or dict, it means the agent
-                            # is streaming the raw tool result here. Capture it and silence the print.
-                            if isinstance(maybe_parsed, (list, dict)):
-                                # Capture the structured data for pretty_display later
-                                raw_tool_output = maybe_parsed
-                                # Do NOT print it. Skip the rest of the loop for this part.
-                                continue
-                                # --- END CRITICAL NEW LOGIC ---
-
-                            # If it's not structured, it's genuine narrative text. Stream it.
-                            print(text_content, end="", flush=True)
-                            final_agent_text.append(text_content)
+                            # Print the final text as it is streamed from the deployed agent (only
+                            # when it's genuine human/scaffold text, not a tool JSON dump).
+                            print(part.text, end="", flush=True)
+                            final_agent_text.append(part.text)  # Keep full text for reference
 
 
         except Exception as e:
@@ -136,8 +311,8 @@ async def main():
                 thesis_text=thesis_input,
                 references_json=references_for_debate,
                 runner=runner,  # Pass the local runner for criteria dialogue
-                user_id=USER_ID,
-                session_id=SESSION_ID,
+                user_id=user_id,
+                session_id=session_id,
                 blocking_mode="to_thread"  # Ensures the debate agents run without blocking
             )
             break  # Debate completed

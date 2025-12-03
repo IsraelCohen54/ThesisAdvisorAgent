@@ -22,8 +22,7 @@ class GoogleScholarTool:
             logger.error("SERPAPI_API_KEY not found. Skipping Google Scholar search.")
             return {"error": "API Key Missing"}
 
-        # logger.info(f"[ScholarTool] Searching: {query}")
-        # I have that on cloud
+        logger.info(f"[ScholarTool] Searching: {query}")
 
         try:
             params = {"engine": "google_scholar", "q": query, "api_key": api_key, "num": 5}
@@ -69,8 +68,7 @@ class PubMedTool:
     def execute(self, query: str) -> Dict[str, Any]:
         """Return {'result': [ {title, source, authors, link, snippet, pmid}, ... ] }"""
         term = self._make_search_term(query)
-        # logger.info(f"[PubMedTool] Searching: {term}")
-        # I have that on cloud
+        logger.info(f"[PubMedTool] Searching: {term}")
 
         try:
             with Entrez.esearch(db="pubmed", term=term, retmax=self.max_results, sort="relevance") as handle:

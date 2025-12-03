@@ -2,8 +2,6 @@ ThesisAdvisor/
 ├── app/
 │   ├── config/
 │   │    └── settings.py
-│   ├── function_helpers/
-│   │    └─ cloud_helpers.py
 │   ├── core/           # Entities & Business Logic (The Brain)
 │   │    ├── Agents.py                ( - search and talk with user)
 │   │    └── anylize_and_recommend.py ( - Debaters agents)
