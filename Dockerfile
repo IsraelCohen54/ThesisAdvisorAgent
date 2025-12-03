@@ -3,7 +3,7 @@ FROM python:3.11-slim
 
 # --- ADD THIS LINE ---
 # This ensures the SERPAPI_API_KEY environment variable is set permanently in the container.
-ENV SERPAPI_API_KEY="c71ee2d72c33164839f4579a53541bf9a7914ec0f03e6f303260261062c7b8bf"
+ENV SERPAPI_API_KEY=""
 # ---------------------
 
 # Set the working directory
