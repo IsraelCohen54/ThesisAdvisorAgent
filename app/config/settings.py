@@ -27,8 +27,8 @@ RETRY_CONFIG = types.HttpRetryOptions(
 CORE_MODEL = Gemini(model="gemini-2.5-flash", retry_options=RETRY_CONFIG)
 
 # 4. --- Vertex AI Deployment Constants ---
-REGION = "us-central1"
-PROJECT_ID = "flowing-precept-479317-j4"
+REGION =
+PROJECT_ID =
 AGENT_RESOURCE_ID = f"projects/682003720850/locations/{REGION}/reasoningEngines/5242590188491767808"
 
 # 5. For PubMed Search tool - "Entrez" configuration
