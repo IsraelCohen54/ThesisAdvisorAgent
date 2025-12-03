@@ -1,4 +1,5 @@
 # 🎓 Thesis Advisor AI Agent
+#### *** For kaggke course purpose, videos, image and course descriptions, on Kaggle subsciption instead of READ.ME on github. ***
 An intelligent, multi-agent system designed to help researchers validate, refine, and stress-test their thesis ideas using real academic data and adversarial debate.
 
 ## 📖 Overview
@@ -6,7 +7,7 @@ The Thesis Advisor AI is not just a chatbot; it is a structured workflow designe
 
 Discovery Phase: A specialized "Talk Agent" searches for real academic literature (PubMed, Google Scholar) most relevant to your thesis.
 
-Debate Phase: Two context-aware agents (PRO and CON) engage in a multi-round debate to analyze the feasibility, novelty, and ethics of your idea, supervised by a "Judge" agent that provides a final verdict and scoring.
+Debate Phase: Two context-aware agents (PRO and CON) engage in a multi-round debate to analyze (e.g.) the feasibility, novelty, and ethics of your idea, supervised by a "Judge" agent that provides a final verdict and scoring.
 
 ## 🚀 Key Features
 Hybrid Architecture: Combines deployed Vertex AI agents for tool execution with local, asynchronous coordination for complex debate logic.
@@ -53,39 +54,32 @@ Python 3.10+ installed.
 A Google Cloud Project with Vertex AI API enabled.
 
 Google Cloud CLI installed and authenticated (gcloud auth application-default login).
-
-Deploy via cmd, from root folder:
-```
-.\venv\Scripts\adk.exe deploy agent_engine --project=["YOUR_PROJECT_ID"] --region=us-central1 thesis_advisor_deploy --agent_engine_config_file=thesis_advisor_deploy/.agent_engine_config.json
-```
-(```us-central1``` is recommended, there are other options) 
+ 
 
 ## 🔧 Installation
 Clone the Repository
 
-Bash
-
+```
 git clone https://github.com/yourusername/thesis-advisor-agent.git
 cd thesis-advisor-agent
+```
 Create a Virtual Environment
 
-Bash
-
-python -m venv venv
+```python -m venv venv```
 # Windows
+
 ```.\venv\Scripts\activate```
 # Mac/Linux
 ```
 source venv/bin/activate
+
 Install Dependencies
 ```
 
-Bash
-
-pip install -r requirements.txt
-Environment Setup The application relies on Google Cloud environment variables. You can set them in your terminal or ensure thesis_advisor_client.py has the correct defaults:
+```pip install -r requirements.txt``` (e.g. inside terminal)
+Environment Setup The application relies on Google Cloud environment variables.<br> You can set them in your terminal or ensure thesis_advisor_client.py has the correct defaults:
 Update setting file with your correct data,
-And have .env file in your root with your API-keys inserted:
+You should have .env file in your root with your API-keys inserted:
 ```
 GEMINI_API_KEY=
 SERPAPI_API_KEY=
@@ -93,14 +87,18 @@ NCBI_CONTACT_EMAIL=
 NCBI_API_KEY=
 ```
 
-Bash
+Deploy via cmd to Google cloud, run from root folder:
+```
+.\venv\Scripts\adk.exe deploy agent_engine --project="YOUR_PROJECT_ID" --region=us-central1 thesis_advisor_deploy --agent_engine_config_file=thesis_advisor_deploy/.agent_engine_config.json
+```
+(```us-central1``` is recommended, there are other options)
+(To manage that, you should have google cloud profile, install 
 
 export GOOGLE_CLOUD_PROJECT="your-project-id"
 export GOOGLE_CLOUD_LOCATION="us-central1"
 🏃 Usage
 Run the main client application:
 
-Bash
 
 python thesis_advisor_client.py
 The Workflow:
@@ -116,38 +114,13 @@ Action: You can choose to:
 
 [R]efine: Rewrite your thesis and search again.
 
-[C]ontinue: Launch the Debate.
-
-The Debate Process (If you choose 'Continue'):
-Criteria Selection: The agent asks you to select evaluation criteria (e.g., Feasibility, Novelty, Ethics).
-
-Rounds 1-5: PRO and CON agents argue. They will utilize the academic references found in step 2 to support their claims.
-
-Verdict: The Judge provides a final summary, scores for each side, and concrete advice on how to improve your thesis.
-
-🛡️ Security Note
-This repository contains agent logic (agents.py) but excludes specific deployment configurations (.agent_engine_config.json) to protect project credentials.
-
-When deploying or running locally, ensure your GOOGLE_CLOUD_PROJECT environment variables are set correctly. Never commit your service account keys or API keys to GitHub.
-
-🤝 Contributing
-Contributions are welcome! Please follow these steps:
-
-Fork the project.
-
-Create your feature branch (git checkout -b feature/AmazingFeature).
-
-Commit your changes.
-
-Push to the branch.
-
-Open a Pull Request.
-
-📄 License
-Distributed under the MIT License. See LICENSE for more information.
+[C]ontinue: Launch the Debate
 
 
-### Debaters logic in lenght:
+### The Debate Process (If you choose 'C' to continue'):
+Criteria Selection: The agent asks you to select evaluation criteria (e.g., Feasibility, Novelty, Ethics). & are hard coded suggestions, one is for user if he would like to add new one.
+
+### Debaters logic, trying to be fair and smart (the last debater don't have an automatic win due to say the last word:
 ```
 Rules:
 1. Initialization: Agents receive Thesis, Criteria, and Initial References.
@@ -156,5 +129,23 @@ Rules:
 4. Round 3 (Deepen): Refute R2 + Strengthen case.  SEARCH ALLOWED (Google Scholar/PubMed) to find new evidence.
 5. Round 4 (Rebuttal): Refute R3.  NO SEARCH.
 6. Round 5 (Closing): Ignore opponent. Final strong case.  SEARCH ALLOWED for final stats/facts.
-7. Verdict: Judge Agent evaluates full transcript.
+7. Verdict: Judge Agent evaluates full transcript and would give concrete advice on how to improve your thesis.
 ```
+
+🛡️ Security Note
+This repository contains agent logic (agents.py) but excludes specific deployment configurations (.env or project id) to protect project credentials.
+
+When deploying or running locally, ensure your GOOGLE_CLOUD_PROJECT environment variables are set correctly. Never commit your service account keys or API keys to GitHub.
+
+
+🤝 Contributing
+Contributions are welcome! Please follow these steps:
+
+Fork the project.
+Create your feature branch (git checkout -b feature/AmazingFeature).
+Commit your changes.
+Push to the branch.
+Open a Pull Request.
+
+📄 License
+Distributed under the MIT License. See LICENSE for more information.
