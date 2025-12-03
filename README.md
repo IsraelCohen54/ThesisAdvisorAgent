@@ -1,5 +1,5 @@
 # 🎓 Thesis Advisor AI Agent
-#### *** For kaggke course purpose, videos, image and course descriptions, on Kaggle subsciption instead of READ.ME on github. ***
+#### *** For kaggke course purpose, videos, image and Project descriptions is elaborated mainly on Kaggle. (not on READ.ME on GitHub), GitHub simply has the code. ***
 An intelligent, multi-agent system designed to help researchers validate, refine, and stress-test their thesis ideas using real academic data and adversarial debate.
 
 ## 📖 Overview
