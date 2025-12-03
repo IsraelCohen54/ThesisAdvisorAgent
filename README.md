@@ -53,6 +53,9 @@ A Google Cloud Project with Vertex AI API enabled.
 
 Google Cloud CLI installed and authenticated (gcloud auth application-default login).
 
+Deploy via cmd, from root folder:
+.\venv\Scripts\adk.exe deploy agent_engine --project=["YOUR_PROJECT_ID"] --region=us-central1 thesis_advisor_deploy --agent_engine_config_file=thesis_advisor_deploy/.agent_engine_config.json
+
 🔧 Installation
 Clone the Repository
 
@@ -75,6 +78,12 @@ Bash
 
 pip install -r requirements.txt
 Environment Setup The application relies on Google Cloud environment variables. You can set them in your terminal or ensure thesis_advisor_client.py has the correct defaults:
+Update setting file with your correct data,
+And have .env file in your root with your API-keys inserted:
+GEMINI_API_KEY=
+SERPAPI_API_KEY=
+NCBI_CONTACT_EMAIL=
+NCBI_API_KEY=
 
 Bash
 
