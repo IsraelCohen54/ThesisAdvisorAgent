@@ -30,7 +30,6 @@ logger.setLevel(logging.INFO)
 
 
 
-
 # --- Main Async Logic ---
 async def main():
     print("🎓 Thesis Advisor — Interactive Agent System")
@@ -86,7 +85,6 @@ async def main():
                         if getattr(part, "text", None):
                             text_content = part.text
 
-                            # --- CRITICAL NEW LOGIC: Intercept raw structured text ---
                             maybe_parsed = normalize_tool_output(text_content)
 
                             # If parsing the text results in a list or dict, it means the agent
@@ -94,9 +92,7 @@ async def main():
                             if isinstance(maybe_parsed, (list, dict)):
                                 # Capture the structured data for pretty_display later
                                 raw_tool_output = maybe_parsed
-                                # Do NOT print it. Skip the rest of the loop for this part.
                                 continue
-                                # --- END CRITICAL NEW LOGIC ---
 
                             # If it's not structured, it's genuine narrative text. Stream it.
                             print(text_content, end="", flush=True)
@@ -111,9 +107,15 @@ async def main():
 
         # --- PHASE 1 DISPLAY & BRIDGE LOGIC (MUST BE OUTSIDE THE ASYNC LOOP) ---
         # If the agent returned raw structured data (list/dict), prefer it and pretty display:
-        if raw_tool_output and not final_agent_text:
+        if raw_tool_output:
             print(pretty_display(raw_tool_output, max_snippet=500))
-        elif not raw_tool_output and not final_agent_text:
+
+        # If no structured output, check for narrative text.
+        elif final_agent_text:
+            print("\n".join(final_agent_text))
+
+        # If neither, say nothing found.
+        else:
             print("No results found.")
 
         print("\n" + "=" * 60)
