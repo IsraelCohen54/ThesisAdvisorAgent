@@ -1,7 +1,10 @@
 # 🎓 Thesis Advisor AI Agent
-#### *** For kaggke course purpose, videos, image and Project descriptions is elaborated mainly on Kaggle. (not on READ.ME on GitHub), GitHub simply has the code. I manage to copy most of the things prior the deadline***
 
-# Thesis Advisor
+
+*Our Explanation Video*
+video https://www.youtube.com/watch?v=2haQXxLy46E&embeds_referring_euri=https%3A%2F%2Fwww.kaggle.com%2F&embeds_referring_origin=https%3A%2F%2Fwww.kaggle.com&source_ve_path=OTY3MTQ
+
+# Thesis Advisor 
 An interactive multi-agent assistant that helps students choose, refine, and evaluate thesis ideas by searching most similar literature, and staging a structured pro/con debate over the thesis idea using the retrieved literature and user's evaluation criteria.
 
 ## Problem statement - What we’re solving and why does it matter
@@ -49,6 +52,8 @@ In summary, the agent architecture transforms a complex, subjective, knowledge-h
 This makes agents not only appropriate but essential for achieving reliable, high-quality results in this context.
 
 ## Overall architecture
+<img width="2219" height="1137" alt="flow all" src="https://github.com/user-attachments/assets/b8cf148f-08ae-4ef7-8245-6c8c8e57a4b8" />
+
 Core to the Thesis Advisor is a robust multi-agent ecosystem designed to simulate a rigorous academic review committee. It moves beyond a monolithic LLM interaction by orchestrating a team of specialized agents, each contributing to a specific stage of the research validation process. This modular approach, facilitated by Google’s Agent Development Kit (ADK), allows for a sophisticated workflow that deliberately separates information retrieval from critical analysis.
 
 1. The Search Dispatcher: DialogAgent The entry point of the intelligent workflow is the Root Dialog Agent. Acting as a strict router, this agent analyzes the semantic context of the user’s thesis topic to determine the appropriate academic domain. It utilizes specialized FunctionTools to connect the system to external knowledge bases.
