@@ -32,15 +32,17 @@ Plaintext
 
 ThesisAdvisorAgent/<br>
 ├── app//<br>
-│   ├── config//<br>
-│   │   └── settings.py           # Configuration (Model versions, Logging)/<br>
-│   ├── core//<br>
-│   │   ├── agents.py             # Definition of Tool-Use Agents (Scholar/PubMed)/<br>
-│   │   └── anylize_and_recommend.py # The Debate & Judge Logic (PRO/CON/Judge)/<br>
-│   └── infrastructure//<br>
-│       └── tools.py              # Implementation of GoogleScholar and PubMed clients/<br>
-├── thesis_advisor_client.py      # Main entry point (CLI application)/<br>
-├── requirements.txt              # Dependencies/<br>
+│  ├─ config//<br>
+│  │ └─ settings.py   # Configuration (Model versions, Logging)<br>
+│  ├─ function_helpers//<br>
+│  │ └─ cloud_helpers.py<br>
+│  ├─ core//<br>
+│  │ ├─ agents.py   # Definition of Tool-Use Agents (Scholar/PubMed)<br>
+│  │ └─ anylize_and_recommend.py # The Debate & Judge Logic (PRO/CON/Judge)<br>
+│  └─ infrastructure//<br>
+│    └─ tools.py   # Implementation of GoogleScholar and PubMed clients<br>
+├── thesis_advisor_client.py # Main entry point (CLI application)<br>
+├── requirements.txt  # Dependencies<br>
 └── README.md/<br>
 📦 Prerequisites
 Before running the agent, ensure you have:
