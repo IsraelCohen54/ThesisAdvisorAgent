@@ -4,7 +4,7 @@ An intelligent, multi-agent system designed to help researchers validate, refine
 ## 📖 Overview
 The Thesis Advisor AI is not just a chatbot; it is a structured workflow designed to mimic a rigorous academic consultation. It leverages Google Cloud Vertex AI and the Agent Development Kit (ADK) to perform a two-phase analysis:
 
-Discovery Phase: A specialized "Talk Agent" searches for real academic literature (PubMed, Google Scholar) relevant to your thesis.
+Discovery Phase: A specialized "Talk Agent" searches for real academic literature (PubMed, Google Scholar) most relevant to your thesis.
 
 Debate Phase: Two context-aware agents (PRO and CON) engage in a multi-round debate to analyze the feasibility, novelty, and ethics of your idea, supervised by a "Judge" agent that provides a final verdict and scoring.
 
