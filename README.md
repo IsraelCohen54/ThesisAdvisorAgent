@@ -77,7 +77,7 @@ No hallucinating sources! It executes a deterministic logic to dispatch the quer
 2. Retrieval & User Review The selected tool executes a live search, returning structured results. The CLI displays the top references (Title, Author, Snippet). The user enters a decision loop: [Q]uit, [R]efine (restart with new input), or [C]ontinue to the debate.
 3. Criteria Selection Upon continuing, a dedicated Dialog Agent guides the user to select exactly three specific evaluation criteria (e.g., Feasibility, Novelty, Ethics) to constrain the upcoming debate.
 4. The Adversarial Debate Loop (5 Rounds) Two agents (PRO and CON) engage in a structured debate.
-To ensure efficiency and robustness and fairness, agents utilize Context Compaction, retaining only the most recent round's memory. (~Attached image that show the debate rules and flow~).
+To ensure efficiency and robustness and fairness, agents utilize Context Compaction, retaining only the most recent round's memory. (*Attached image that show the debate rules and flow*).
 <img width="1880" height="1037" alt="inbox_29340440_e631a897dd32437a78231e102e373e82_debaters_flow" src="https://github.com/user-attachments/assets/b64d44f9-91fc-41fb-9685-fcc3b7ad9296" />
 
 ## The build - tools & technologies
